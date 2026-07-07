@@ -34,6 +34,10 @@ export class Dashboard extends Scene
     knobHit: Phaser.GameObjects.Arc;
     gearLabels: Map<number, Phaser.GameObjects.Text> = new Map();
 
+    //  Keyboard controls for desktop testing: arrows steer/shift, space accelerates
+    cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined;
+    keyThrottle = false;
+
     constructor ()
     {
         super('Dashboard');
@@ -55,6 +59,9 @@ export class Dashboard extends Scene
         this.input.on('pointermove', this.onPointerMove, this);
         this.input.on('pointerup', this.onPointerUp, this);
         this.input.on('gameout', this.releaseAll, this);
+
+        this.cursors = this.input.keyboard?.createCursorKeys();
+        this.keyThrottle = false;
     }
 
     createWheel ()
@@ -241,14 +248,21 @@ export class Dashboard extends Scene
     {
         this.wheelPointerId = -1;
         this.releasePedal();
+
+        //  Let a still-held space bar re-engage the throttle next frame
+        this.keyThrottle = false;
     }
 
     update (_time: number, delta: number)
     {
-        //  Wheel springs back to centre when let go
-        if (this.wheelPointerId === -1 && this.wheelRotation !== 0)
+        const dt = delta / 1000;
+
+        this.updateKeyboard(dt);
+
+        //  Wheel springs back to centre when let go (touch or keys)
+        if (this.wheelPointerId === -1 && !this.steeringKeyDown() && this.wheelRotation !== 0)
         {
-            this.wheelRotation *= 1 - Math.min(1, (delta / 1000) * 6);
+            this.wheelRotation *= 1 - Math.min(1, dt * 6);
 
             if (Math.abs(this.wheelRotation) < 0.01)
             {
@@ -258,5 +272,63 @@ export class Dashboard extends Scene
 
         this.wheel.rotation = this.wheelRotation;
         this.registry.set('steering', this.wheelRotation / MAX_TURN);
+    }
+
+    steeringKeyDown (): boolean
+    {
+        return !!this.cursors && (this.cursors.left.isDown || this.cursors.right.isDown);
+    }
+
+    updateKeyboard (dt: number)
+    {
+        if (!this.cursors)
+        {
+            return;
+        }
+
+        //  Arrows turn the wheel, unless a finger is already holding it
+        if (this.wheelPointerId === -1)
+        {
+            const turnRate = 5 * dt;
+
+            if (this.cursors.left.isDown && !this.cursors.right.isDown)
+            {
+                this.wheelRotation = Math.max(this.wheelRotation - turnRate, -MAX_TURN);
+            }
+            else if (this.cursors.right.isDown && !this.cursors.left.isDown)
+            {
+                this.wheelRotation = Math.min(this.wheelRotation + turnRate, MAX_TURN);
+            }
+        }
+
+        //  Space is the accelerator, unless a finger is already on the pedal
+        if (this.pedalPointerId === -1)
+        {
+            if (this.cursors.space.isDown && !this.keyThrottle)
+            {
+                this.keyThrottle = true;
+                this.registry.set('throttle', 1);
+                this.pedal.setScale(0.92);
+            }
+            else if (!this.cursors.space.isDown && this.keyThrottle)
+            {
+                this.keyThrottle = false;
+                this.registry.set('throttle', 0);
+                this.pedal.setScale(1);
+            }
+        }
+
+        //  Up/down arrows shift gear: R -> 1 -> 2
+        const order = [ -1, 1, 2 ];
+        const index = order.indexOf(this.registry.get('gear') as number);
+
+        if (Phaser.Input.Keyboard.JustDown(this.cursors.up) && index < order.length - 1)
+        {
+            this.moveKnobTo(order[index + 1]);
+        }
+        else if (Phaser.Input.Keyboard.JustDown(this.cursors.down) && index > 0)
+        {
+            this.moveKnobTo(order[index - 1]);
+        }
     }
 }
