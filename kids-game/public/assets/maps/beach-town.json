@@ -1,0 +1,35 @@
+{
+    "id": "beach-town",
+    "name": "Sandy Beach",
+    "tiles": [
+        "......R.....",
+        "..HH..R..T..",
+        "..HH..R.HH..",
+        ".T....R.HH..",
+        "...RRRRRRRRR",
+        "...R.HH..R..",
+        "...R.HH..R..",
+        "...RRRRRRR..",
+        "..T...T.....",
+        "SSSSSSSSSSSS",
+        "WWWWWWWWWWWW",
+        "WWWWWWWWWWWW"
+    ],
+    "objects": [
+        {
+            "id": "ice-cream-shop",
+            "type": "house",
+            "col": 8,
+            "row": 8,
+            "w": 2,
+            "h": 1,
+            "colour": "pink",
+            "facing": "south",
+            "sign": "ICE CREAM"
+        }
+    ],
+    "exits": {
+        "north": "home-town",
+        "east": "cove-town"
+    }
+}

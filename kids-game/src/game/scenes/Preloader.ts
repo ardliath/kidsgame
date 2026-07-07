@@ -1,4 +1,5 @@
 import { Scene } from 'phaser';
+import { MAP_IDS, mapCacheKey } from '../mapBuilder';
 
 export class Preloader extends Scene
 {
@@ -33,6 +34,11 @@ export class Preloader extends Scene
         this.load.setPath('assets');
 
         this.load.image('logo', 'logo.png');
+
+        for (const id of MAP_IDS)
+        {
+            this.load.json(mapCacheKey(id), `maps/${id}.json`);
+        }
     }
 
     create ()

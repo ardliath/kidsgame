@@ -1,0 +1,34 @@
+{
+    "id": "cove-town",
+    "name": "Sunny Cove",
+    "tiles": [
+        "...R........",
+        "...R..HH.T..",
+        "...R..HH....",
+        "...R........",
+        "RRRRRRRRR...",
+        "....R...R...",
+        ".HH.R.T.R.HH",
+        "....RRRRR...",
+        "..T......T..",
+        "SSSSSSSSSSSS",
+        "WWWWWWWWWWWW",
+        "WWWWWWWWWWWW"
+    ],
+    "objects": [
+        {
+            "id": "harbour-house",
+            "type": "house",
+            "col": 9,
+            "row": 2,
+            "w": 2,
+            "h": 2,
+            "colour": "teal",
+            "facing": "south"
+        }
+    ],
+    "exits": {
+        "north": "hill-town",
+        "west": "beach-town"
+    }
+}

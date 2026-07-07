@@ -2,17 +2,22 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes, DEFAULT_COLOUR, DEFAULT_MODEL } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
+import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, TILE } from '../mapBuilder';
 import { loadCarStyle, SaveData } from '../storage';
 
-const WORLD_SIZE = 2400;
-const START_X = 1200;
-const START_Y = 1500;
+interface EntryState
+{
+    x: number;
+    y: number;
+    heading: number;
+    speed: number;
+}
 
-//  Centre lines of the roads that cross the town, and how wide they are
-const ROADS = [400, 1200, 2000];
-const ROAD_WIDTH = 160;
-
-const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
+interface DrivingData
+{
+    mapId?: string;
+    entry?: EntryState;
+}
 
 export class Driving extends Scene
 {
@@ -20,36 +25,65 @@ export class Driving extends Scene
     speed = 0;
     heading = 0;
 
+    map: MapData;
+    mapWidth = 0;
+    mapHeight = 0;
+    startPos: { x: number; y: number };
+    houses: PlacedHouse[] = [];
+    transitioning = false;
+    sceneData: DrivingData = {};
+
     constructor ()
     {
         super('Driving');
     }
 
+    init (data: DrivingData)
+    {
+        this.sceneData = data ?? {};
+    }
+
     create ()
     {
-        this.speed = 0;
-        this.heading = 0;
+        this.speed = this.sceneData.entry?.speed ?? 0;
+        this.heading = this.sceneData.entry?.heading ?? 0;
+        this.transitioning = false;
 
-        //  The Dashboard scene writes these, we read them every frame
-        this.registry.set('steering', 0);
-        this.registry.set('throttle', 0);
-        this.registry.set('gear', 1);
+        //  First boot only — map changes keep whatever the player was doing
+        if (this.registry.get('gear') === undefined)
+        {
+            this.registry.set('steering', 0);
+            this.registry.set('throttle', 0);
+            this.registry.set('gear', 1);
+        }
 
-        //  Remember the car the player chose last time
-        const style = loadCarStyle();
-        this.registry.set('carColour', style?.colour ?? DEFAULT_COLOUR);
-        this.registry.set('carModel', style?.model ?? DEFAULT_MODEL);
+        if (this.registry.get('carColour') === undefined)
+        {
+            const style = loadCarStyle();
+            this.registry.set('carColour', style?.colour ?? DEFAULT_COLOUR);
+            this.registry.set('carModel', style?.model ?? DEFAULT_MODEL);
+        }
 
         //  Extra pointers so the wheel, pedal and gear stick work at the same time
         this.input.addPointer(3);
 
-        this.physics.world.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
+        const mapId = this.sceneData.mapId ?? DEFAULT_MAP;
+        this.registry.set('mapId', mapId);
+        this.map = this.cache.json.get(mapCacheKey(mapId)) as MapData;
 
-        const obstacles = this.buildTown();
+        const built = buildMap(this, this.map);
+        this.mapWidth = built.width;
+        this.mapHeight = built.height;
+        this.startPos = built.start;
+        this.houses = built.houses;
 
-        this.car = this.buildCar(START_X, START_Y);
+        this.physics.world.setBounds(0, 0, built.width, built.height);
 
-        this.physics.add.collider(this.car, obstacles);
+        const spawn = this.sceneData.entry ?? this.startPos;
+        this.car = this.buildCar(spawn.x, spawn.y);
+        this.car.rotation = this.heading;
+
+        this.physics.add.collider(this.car, built.obstacles);
 
         //  Repaint the car when the options screen changes it
         this.registry.events.on('changedata-carColour', this.restyleCar, this);
@@ -62,110 +96,22 @@ export class Driving extends Scene
 
         const cam = this.cameras.main;
         cam.setViewport(0, 0, GAME_WIDTH, VIEW_HEIGHT);
-        cam.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
+        cam.setBounds(0, 0, built.width, built.height);
         cam.startFollow(this.car, true, 0.08, 0.08);
+        cam.fadeIn(200, 16, 32, 39);
 
-        this.scene.launch('Dashboard');
-    }
+        //  Town name, fades out after a moment
+        const label = this.add.text(20, 16, this.map.name, {
+            fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff',
+            stroke: '#000000', strokeThickness: 6
+        }).setScrollFactor(0);
 
-    buildTown (): Phaser.Physics.Arcade.StaticGroup
-    {
-        //  Grass
-        this.add.rectangle(WORLD_SIZE / 2, WORLD_SIZE / 2, WORLD_SIZE, WORLD_SIZE, 0x7cb342);
+        this.tweens.add({ targets: label, alpha: 0, delay: 1500, duration: 500 });
 
-        //  Kerbs, then the roads on top of them
-        for (const road of ROADS)
+        if (!this.scene.isActive('Dashboard'))
         {
-            this.add.rectangle(road, WORLD_SIZE / 2, ROAD_WIDTH + 24, WORLD_SIZE, 0x9e9e9e);
-            this.add.rectangle(WORLD_SIZE / 2, road, WORLD_SIZE, ROAD_WIDTH + 24, 0x9e9e9e);
+            this.scene.launch('Dashboard');
         }
-
-        for (const road of ROADS)
-        {
-            this.add.rectangle(road, WORLD_SIZE / 2, ROAD_WIDTH, WORLD_SIZE, 0x555555);
-            this.add.rectangle(WORLD_SIZE / 2, road, WORLD_SIZE, ROAD_WIDTH, 0x555555);
-        }
-
-        //  Dashed centre lines, skipping the junctions
-        const nearRoad = (v: number) => ROADS.some(r => Math.abs(v - r) < 130);
-
-        for (const road of ROADS)
-        {
-            for (let p = 60; p < WORLD_SIZE; p += 120)
-            {
-                if (!nearRoad(p))
-                {
-                    this.add.rectangle(road, p, 8, 44, 0xffffff);
-                    this.add.rectangle(p, road, 44, 8, 0xffffff);
-                }
-            }
-        }
-
-        const obstacles = this.physics.add.staticGroup();
-
-        //  The blocks of land between the roads
-        const blocks: [number, number][] = [];
-        let start = 0;
-
-        for (const road of ROADS)
-        {
-            blocks.push([ start, road - ROAD_WIDTH / 2 - 12 ]);
-            start = road + ROAD_WIDTH / 2 + 12;
-        }
-
-        blocks.push([ start, WORLD_SIZE ]);
-
-        let n = 0;
-
-        for (const [ x0, x1 ] of blocks)
-        {
-            for (const [ y0, y1 ] of blocks)
-            {
-                const w = x1 - x0;
-                const h = y1 - y0;
-                const cols = w > 400 ? 2 : 1;
-                const rows = h > 400 ? 2 : 1;
-
-                for (let cx = 0; cx < cols; cx++)
-                {
-                    for (let cy = 0; cy < rows; cy++)
-                    {
-                        const hx = x0 + w * (cx + 1) / (cols + 1);
-                        const hy = y0 + h * (cy + 1) / (rows + 1);
-                        const colour = HOUSE_COLOURS[n % HOUSE_COLOURS.length];
-                        const size = 140 + (n % 3) * 25;
-                        const darker = Phaser.Display.Color.IntegerToColor(colour).darken(35).color;
-
-                        const house = this.add.rectangle(hx, hy, size, size, colour);
-                        house.setStrokeStyle(8, darker);
-
-                        //  Roof ridge line
-                        this.add.rectangle(hx, hy, size - 16, 12, darker);
-
-                        this.physics.add.existing(house, true);
-                        obstacles.add(house);
-
-                        n++;
-                    }
-                }
-
-                //  A couple of trees in the bigger blocks
-                if (w > 400 && h > 400)
-                {
-                    for (const [ tx, ty ] of [ [ x0 + 80, y0 + 80 ], [ x1 - 80, y1 - 80 ] ])
-                    {
-                        const tree = this.add.circle(tx, ty, 34, 0x2e7d32);
-                        this.add.circle(tx, ty, 20, 0x43a047);
-
-                        this.physics.add.existing(tree, true);
-                        (tree.body as Phaser.Physics.Arcade.StaticBody).setCircle(34);
-                        obstacles.add(tree);
-                    }
-                }
-            }
-        }
-
-        return obstacles;
     }
 
     buildCar (x: number, y: number): Phaser.GameObjects.Container
@@ -178,9 +124,7 @@ export class Driving extends Scene
         car.setSize(68, 68);
         this.physics.add.existing(car);
 
-        const physicsBody = car.body as Phaser.Physics.Arcade.Body;
-        physicsBody.setCircle(34);
-        physicsBody.setCollideWorldBounds(true);
+        (car.body as Phaser.Physics.Arcade.Body).setCircle(34);
 
         return car;
     }
@@ -193,7 +137,14 @@ export class Driving extends Scene
 
     resetCar ()
     {
-        (this.car.body as Phaser.Physics.Arcade.Body).reset(START_X, START_Y);
+        if (this.registry.get('mapId') !== DEFAULT_MAP)
+        {
+            this.scene.restart({ mapId: DEFAULT_MAP });
+
+            return;
+        }
+
+        (this.car.body as Phaser.Physics.Arcade.Body).reset(this.startPos.x, this.startPos.y);
         this.car.rotation = 0;
         this.heading = 0;
         this.speed = 0;
@@ -202,6 +153,7 @@ export class Driving extends Scene
     getSaveData (): SaveData
     {
         return {
+            mapId: this.registry.get('mapId') as string,
             x: this.car.x,
             y: this.car.y,
             heading: this.heading,
@@ -216,14 +168,63 @@ export class Driving extends Scene
         this.registry.set('carColour', data.carColour);
         this.registry.set('carModel', data.carModel);
 
+        const mapId = data.mapId ?? DEFAULT_MAP;
+
+        if (mapId !== this.registry.get('mapId'))
+        {
+            this.scene.restart({ mapId, entry: { x: data.x, y: data.y, heading: data.heading, speed: 0 } });
+
+            return;
+        }
+
         (this.car.body as Phaser.Physics.Arcade.Body).reset(data.x, data.y);
         this.car.rotation = data.heading;
         this.heading = data.heading;
         this.speed = 0;
     }
 
+    exitMap (edge: Edge)
+    {
+        const target = this.map.exits?.[edge];
+
+        if (!target || this.transitioning)
+        {
+            return;
+        }
+
+        this.transitioning = true;
+
+        const targetMap = this.cache.json.get(mapCacheKey(target)) as MapData;
+        const targetWidth = targetMap.tiles[0].length * TILE;
+        const targetHeight = targetMap.tiles.length * TILE;
+
+        //  Enter the next map from the opposite edge, keeping pace and direction
+        const entry: EntryState = {
+            x: this.car.x,
+            y: this.car.y,
+            heading: this.heading,
+            speed: this.speed
+        };
+
+        if (edge === 'east') entry.x = 44;
+        if (edge === 'west') entry.x = targetWidth - 44;
+        if (edge === 'south') entry.y = 44;
+        if (edge === 'north') entry.y = targetHeight - 44;
+
+        this.cameras.main.fadeOut(180, 16, 32, 39);
+
+        this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+            this.scene.restart({ mapId: target, entry });
+        });
+    }
+
     update (_time: number, delta: number)
     {
+        if (this.transitioning)
+        {
+            return;
+        }
+
         const dt = delta / 1000;
 
         const steering = (this.registry.get('steering') as number) ?? 0;
@@ -255,5 +256,25 @@ export class Driving extends Scene
 
         //  The dashboard speedo reads this
         this.registry.set('speed', Math.abs(this.speed));
+
+        //  Through a gap in the edge walls and off the map = drive to the next town
+        const margin = 20;
+
+        if (this.car.x > this.mapWidth + margin)
+        {
+            this.exitMap('east');
+        }
+        else if (this.car.x < -margin)
+        {
+            this.exitMap('west');
+        }
+        else if (this.car.y > this.mapHeight + margin)
+        {
+            this.exitMap('south');
+        }
+        else if (this.car.y < -margin)
+        {
+            this.exitMap('north');
+        }
     }
 }

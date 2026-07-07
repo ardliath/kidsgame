@@ -1,0 +1,35 @@
+{
+    "id": "home-town",
+    "name": "Home Town",
+    "tiles": [
+        "............",
+        ".HH.T.......",
+        ".HH.......T.",
+        "..RRRRRRRR..",
+        ".TR..HH..R..",
+        "..R..HH..R.T",
+        "..R......RRR",
+        ".TR..HH..R..",
+        "..R..HH..R..",
+        "..RRRRRRRR..",
+        "......R..T..",
+        "......R....."
+    ],
+    "objects": [
+        {
+            "id": "big-green-house",
+            "type": "house",
+            "col": 7,
+            "row": 1,
+            "w": 2,
+            "h": 2,
+            "colour": "green",
+            "facing": "south"
+        }
+    ],
+    "exits": {
+        "east": "hill-town",
+        "south": "beach-town"
+    },
+    "start": { "col": 6, "row": 10 }
+}

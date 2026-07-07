@@ -1,0 +1,25 @@
+{
+    "id": "hill-town",
+    "name": "Hillside",
+    "tiles": [
+        "............",
+        "..T..T..T...",
+        ".T.RRRRRR.T.",
+        "...R....R...",
+        ".T.R.TT.R.BB",
+        "...R.TT.R.BB",
+        "RRRR....R...",
+        ".H.R....R.T.",
+        "...RRRRRR...",
+        "...R...T....",
+        "...R..HH.T..",
+        "...R........"
+    ],
+    "legend": {
+        "B": { "type": "house", "colour": "blue", "facing": "west" }
+    },
+    "exits": {
+        "west": "home-town",
+        "south": "cove-town"
+    }
+}

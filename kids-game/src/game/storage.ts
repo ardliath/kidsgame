@@ -3,6 +3,7 @@ const CAR_KEY = 'kids-game-car';
 
 export interface SaveData
 {
+    mapId?: string;
     x: number;
     y: number;
     heading: number;
