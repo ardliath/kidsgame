@@ -3,6 +3,7 @@ import { Dashboard } from './scenes/Dashboard';
 import { Driving } from './scenes/Driving';
 import { AUTO, Game, Scale } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from './layout';
+import { Options } from './scenes/Options';
 import { Preloader } from './scenes/Preloader';
 
 //  Find out more information about the Game Config at:
@@ -24,7 +25,8 @@ const config: Phaser.Types.Core.GameConfig = {
         Boot,
         Preloader,
         Driving,
-        Dashboard
+        Dashboard,
+        Options
     ]
 };
 

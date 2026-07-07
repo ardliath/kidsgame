@@ -1,8 +1,12 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
+import { buildCarShapes, DEFAULT_COLOUR, DEFAULT_MODEL } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
+import { loadCarStyle, SaveData } from '../storage';
 
 const WORLD_SIZE = 2400;
+const START_X = 1200;
+const START_Y = 1500;
 
 //  Centre lines of the roads that cross the town, and how wide they are
 const ROADS = [400, 1200, 2000];
@@ -31,6 +35,11 @@ export class Driving extends Scene
         this.registry.set('throttle', 0);
         this.registry.set('gear', 1);
 
+        //  Remember the car the player chose last time
+        const style = loadCarStyle();
+        this.registry.set('carColour', style?.colour ?? DEFAULT_COLOUR);
+        this.registry.set('carModel', style?.model ?? DEFAULT_MODEL);
+
         //  Extra pointers so the wheel, pedal and gear stick work at the same time
         this.input.addPointer(3);
 
@@ -38,9 +47,18 @@ export class Driving extends Scene
 
         const obstacles = this.buildTown();
 
-        this.car = this.buildCar(1200, 1500);
+        this.car = this.buildCar(START_X, START_Y);
 
         this.physics.add.collider(this.car, obstacles);
+
+        //  Repaint the car when the options screen changes it
+        this.registry.events.on('changedata-carColour', this.restyleCar, this);
+        this.registry.events.on('changedata-carModel', this.restyleCar, this);
+
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+            this.registry.events.off('changedata-carColour', this.restyleCar, this);
+            this.registry.events.off('changedata-carModel', this.restyleCar, this);
+        });
 
         const cam = this.cameras.main;
         cam.setViewport(0, 0, GAME_WIDTH, VIEW_HEIGHT);
@@ -152,26 +170,10 @@ export class Driving extends Scene
 
     buildCar (x: number, y: number): Phaser.GameObjects.Container
     {
+        //  Drawn pointing up, so rotation 0 = heading 0 = north
         const car = this.add.container(x, y);
 
-        //  Drawn pointing up, so rotation 0 = heading 0 = north
-        const wheels = [];
-
-        for (const wx of [ -22, 22 ])
-        {
-            for (const wy of [ -24, 24 ])
-            {
-                wheels.push(this.add.rectangle(wx, wy, 12, 26, 0x212121));
-            }
-        }
-
-        const body = this.add.rectangle(0, 0, 46, 78, 0xe53935).setStrokeStyle(4, 0x8e0000);
-        const windscreen = this.add.rectangle(0, -12, 34, 16, 0xb3e5fc);
-        const rearWindow = this.add.rectangle(0, 22, 30, 10, 0xb3e5fc);
-        const lightLeft = this.add.circle(-13, -36, 5, 0xfff176);
-        const lightRight = this.add.circle(13, -36, 5, 0xfff176);
-
-        car.add([ ...wheels, body, windscreen, rearWindow, lightLeft, lightRight ]);
+        car.add(buildCarShapes(this, this.registry.get('carModel') as string, this.registry.get('carColour') as number));
 
         car.setSize(68, 68);
         this.physics.add.existing(car);
@@ -181,6 +183,43 @@ export class Driving extends Scene
         physicsBody.setCollideWorldBounds(true);
 
         return car;
+    }
+
+    restyleCar ()
+    {
+        this.car.removeAll(true);
+        this.car.add(buildCarShapes(this, this.registry.get('carModel') as string, this.registry.get('carColour') as number));
+    }
+
+    resetCar ()
+    {
+        (this.car.body as Phaser.Physics.Arcade.Body).reset(START_X, START_Y);
+        this.car.rotation = 0;
+        this.heading = 0;
+        this.speed = 0;
+    }
+
+    getSaveData (): SaveData
+    {
+        return {
+            x: this.car.x,
+            y: this.car.y,
+            heading: this.heading,
+            gear: this.registry.get('gear') as number,
+            carColour: this.registry.get('carColour') as number,
+            carModel: this.registry.get('carModel') as string
+        };
+    }
+
+    applySave (data: SaveData)
+    {
+        this.registry.set('carColour', data.carColour);
+        this.registry.set('carModel', data.carModel);
+
+        (this.car.body as Phaser.Physics.Arcade.Body).reset(data.x, data.y);
+        this.car.rotation = data.heading;
+        this.heading = data.heading;
+        this.speed = 0;
     }
 
     update (_time: number, delta: number)

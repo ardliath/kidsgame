@@ -55,6 +55,7 @@ export class Dashboard extends Scene
         this.createWheel();
         this.createGearStick();
         this.createPedal();
+        this.createSettingsCog();
 
         this.input.on('pointermove', this.onPointerMove, this);
         this.input.on('pointerup', this.onPointerUp, this);
@@ -183,6 +184,54 @@ export class Dashboard extends Scene
             this.pedal.setScale(0.92);
 
         });
+    }
+
+    createSettingsCog ()
+    {
+        const parts: Phaser.GameObjects.GameObject[] = [
+            this.add.circle(0, 0, 36, 0x102027, 0.45)
+        ];
+
+        //  Four bars through the centre make eight cog teeth
+        for (let i = 0; i < 4; i++)
+        {
+            const tooth = this.add.rectangle(0, 0, 11, 60, 0xcfd8dc);
+            tooth.setRotation(i * Math.PI / 4);
+            parts.push(tooth);
+        }
+
+        parts.push(this.add.circle(0, 0, 22, 0xcfd8dc));
+        parts.push(this.add.circle(0, 0, 9, 0x102027));
+
+        this.add.container(GAME_WIDTH - 50, 50, parts);
+
+        this.add.zone(GAME_WIDTH - 50, 50, 90, 90).setInteractive().on('pointerdown', () => this.openOptions());
+    }
+
+    openOptions ()
+    {
+        //  Drop the controls so the car isn't stuck accelerating while paused
+        this.releaseAll();
+        this.wheelPointerId = -1;
+        this.wheelRotation = 0;
+        this.wheel.rotation = 0;
+        this.registry.set('steering', 0);
+
+        this.scene.pause('Driving');
+        this.scene.launch('Options');
+        this.scene.pause();
+    }
+
+    setGearImmediate (value: number)
+    {
+        const slot = GEAR_SLOTS.find(s => s.value === value);
+
+        if (slot)
+        {
+            this.knobHit.y = slot.y;
+            this.knob.y = slot.y;
+            this.setGear(slot.value);
+        }
     }
 
     nearestSlot (y: number)
