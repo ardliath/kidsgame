@@ -252,5 +252,8 @@ export class Driving extends Scene
         body.setVelocity(Math.sin(this.heading) * this.speed, -Math.cos(this.heading) * this.speed);
 
         this.car.rotation = this.heading;
+
+        //  The dashboard speedo reads this
+        this.registry.set('speed', Math.abs(this.speed));
     }
 }
