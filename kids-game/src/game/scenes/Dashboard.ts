@@ -1,22 +1,23 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
+import { DASH_HEIGHT, DASH_TOP, GAME_WIDTH } from '../layout';
 
-const DASH_TOP = 860;
-const DASH_HEIGHT = 420;
+//  Wheel far left and pedal far right for thumbs, gear stick in the middle
+const DASH_MID = DASH_TOP + DASH_HEIGHT / 2;
 
-const WHEEL_X = 175;
-const WHEEL_Y = 1070;
+const WHEEL_X = 200;
+const WHEEL_Y = DASH_MID;
 const WHEEL_RADIUS = 120;
 const MAX_TURN = 2.0;
 
-const PEDAL_X = 585;
-const PEDAL_Y = 1075;
+const PEDAL_X = 1080;
+const PEDAL_Y = DASH_MID;
 
-const GEAR_X = 390;
+const GEAR_X = 640;
 const GEAR_SLOTS = [
-    { y: 965, value: 2, label: '2' },
-    { y: 1070, value: 1, label: '1' },
-    { y: 1175, value: -1, label: 'R' }
+    { y: DASH_MID - 90, value: 2, label: '2' },
+    { y: DASH_MID, value: 1, label: '1' },
+    { y: DASH_MID + 90, value: -1, label: 'R' }
 ];
 
 export class Dashboard extends Scene
@@ -44,8 +45,8 @@ export class Dashboard extends Scene
         this.pedalPointerId = -1;
         this.wheelRotation = 0;
 
-        this.add.rectangle(360, DASH_TOP + DASH_HEIGHT / 2, 720, DASH_HEIGHT, 0x263238);
-        this.add.rectangle(360, DASH_TOP + 4, 720, 8, 0x102027);
+        this.add.rectangle(GAME_WIDTH / 2, DASH_MID, GAME_WIDTH, DASH_HEIGHT, 0x263238);
+        this.add.rectangle(GAME_WIDTH / 2, DASH_TOP + 4, GAME_WIDTH, 8, 0x102027);
 
         this.createWheel();
         this.createGearStick();
@@ -108,7 +109,7 @@ export class Dashboard extends Scene
 
             this.gearLabels.set(slot.value, label);
 
-            const slotZone = this.add.zone(GEAR_X, slot.y, 110, 100);
+            const slotZone = this.add.zone(GEAR_X, slot.y, 110, 88);
             slotZone.setInteractive();
             slotZone.on('pointerdown', () => this.moveKnobTo(slot.value));
         }
@@ -118,10 +119,10 @@ export class Dashboard extends Scene
 
         const knobDot = this.add.circle(0, 0, 12, 0x78909c);
 
-        this.knob = this.add.container(GEAR_X, 1070, [ knobBase, knobDot ]);
+        this.knob = this.add.container(GEAR_X, GEAR_SLOTS[1].y, [ knobBase, knobDot ]);
 
         //  Invisible drag handle on top of the knob (and the slot zones)
-        this.knobHit = this.add.circle(GEAR_X, 1070, 48, 0xffffff, 0.001);
+        this.knobHit = this.add.circle(GEAR_X, GEAR_SLOTS[1].y, 48, 0xffffff, 0.001);
         this.knobHit.setInteractive({ draggable: true });
 
         this.knobHit.on('drag', (_pointer: Phaser.Input.Pointer, _dragX: number, dragY: number) => {

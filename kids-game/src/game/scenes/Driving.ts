@@ -1,8 +1,8 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
+import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 
 const WORLD_SIZE = 2400;
-const VIEW_HEIGHT = 860;
 
 //  Centre lines of the roads that cross the town, and how wide they are
 const ROADS = [400, 1200, 2000];
@@ -43,7 +43,7 @@ export class Driving extends Scene
         this.physics.add.collider(this.car, obstacles);
 
         const cam = this.cameras.main;
-        cam.setViewport(0, 0, 720, VIEW_HEIGHT);
+        cam.setViewport(0, 0, GAME_WIDTH, VIEW_HEIGHT);
         cam.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
         cam.startFollow(this.car, true, 0.08, 0.08);
 
