@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
-import { loadBuiltHouses } from './storage';
+import { loadBuiltHouses, loadDemolished, loadExtraSites, loadVisitedHouses, saveDemolished, saveExtraSite } from './storage';
 
 export const TILE = 200;
 
@@ -153,8 +153,149 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     const sites: PlacedSite[] = [];
     const usedIds = new Set<string>();
 
-    //  Houses the player has already built on this map's sites
+    //  ---- Data pass: decide what stands where before drawing anything ----
+
+    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string }
+    interface SiteSpec { id: string; col: number; row: number; w: number; h: number }
+
     const builtHouses = loadBuiltHouses();
+    const demolished = new Set(loadDemolished());
+    const visited = new Set(loadVisitedHouses());
+
+    const houseSpecs: HouseSpec[] = [];
+    const siteSpecs: SiteSpec[] = [];
+
+    for (let r = 0; r < rows; r++)
+    {
+        for (let c = 0; c < cols; c++)
+        {
+            const t = map.tiles[r][c];
+
+            if (t === 'H')
+            {
+                houseSpecs.push({ id: `${map.id}-house-${c}x${r}`, col: c, row: r, w: 1, h: 1 });
+            }
+            else if (t !== '.' && map.legend?.[t]?.type === 'house')
+            {
+                const entry = map.legend[t];
+                houseSpecs.push({ id: `${map.id}-house-${c}x${r}`, col: c, row: r, w: 1, h: 1, colour: entry.colour, facing: entry.facing, sign: entry.sign });
+            }
+        }
+    }
+
+    map.objects?.forEach((obj, index) => {
+
+        if (obj.type === 'house')
+        {
+            houseSpecs.push({ id: obj.id ?? `${map.id}-object-${index}`, col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1, colour: obj.colour, facing: obj.facing, sign: obj.sign });
+        }
+        else if (obj.type === 'site')
+        {
+            siteSpecs.push({ id: obj.id ?? `${map.id}-site-${index}`, col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1 });
+        }
+
+    });
+
+    //  Sites this map gained in earlier sessions (skip any the JSON has since built over)
+    for (const extra of loadExtraSites()[map.id] ?? [])
+    {
+        if (tileAt(extra.col, extra.row) === '.')
+        {
+            siteSpecs.push({ id: extra.id, col: extra.col, row: extra.row, w: 1, h: 1 });
+        }
+    }
+
+    //  Demolished houses stand as building sites now (a rebuilt one is drawn
+    //  as a house again by the site loop below, because it's in builtHouses)
+    for (let i = houseSpecs.length - 1; i >= 0; i--)
+    {
+        const spec = houseSpecs[i];
+
+        if (demolished.has(spec.id))
+        {
+            houseSpecs.splice(i, 1);
+            siteSpecs.push({ id: spec.id, col: spec.col, row: spec.row, w: spec.w, h: spec.h });
+        }
+    }
+
+    //  ---- Keep at least two plots available to build on ----
+    //  Prefer empty grass (never sand or water); as a last resort, demolish
+    //  a house the player hasn't visited and didn't build himself.
+
+    const occupied = new Set<string>();
+
+    const markFootprint = (col: number, row: number, w: number, h: number) => {
+        for (let c = col; c < col + w; c++)
+        {
+            for (let r = row; r < row + h; r++)
+            {
+                occupied.add(`${c},${r}`);
+            }
+        }
+    };
+
+    for (const spec of houseSpecs) markFootprint(spec.col, spec.row, spec.w, spec.h);
+    for (const spec of siteSpecs) markFootprint(spec.col, spec.row, spec.w, spec.h);
+
+    const pickEmptyGrass = (): { col: number; row: number } | null => {
+
+        const nearRoad: { col: number; row: number }[] = [];
+        const anywhere: { col: number; row: number }[] = [];
+
+        for (let r = 0; r < rows; r++)
+        {
+            for (let c = 0; c < cols; c++)
+            {
+                if (map.tiles[r][c] !== '.' || occupied.has(`${c},${r}`))
+                {
+                    continue;
+                }
+
+                const byRoad = tileAt(c - 1, r) === 'R' || tileAt(c + 1, r) === 'R' || tileAt(c, r - 1) === 'R' || tileAt(c, r + 1) === 'R';
+
+                (byRoad ? nearRoad : anywhere).push({ col: c, row: r });
+            }
+        }
+
+        const pool = nearRoad.length > 0 ? nearRoad : anywhere;
+
+        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
+    };
+
+    let available = siteSpecs.filter(s => !builtHouses[s.id]).length;
+    let guard = 0;
+
+    while (available < 2 && guard++ < 8)
+    {
+        const cell = pickEmptyGrass();
+
+        if (cell)
+        {
+            const site: SiteSpec = { id: `${map.id}-extra-${cell.col}x${cell.row}`, col: cell.col, row: cell.row, w: 1, h: 1 };
+
+            siteSpecs.push(site);
+            saveExtraSite(map.id, { id: site.id, col: site.col, row: site.row });
+            markFootprint(site.col, site.row, 1, 1);
+        }
+        else
+        {
+            const index = houseSpecs.findIndex(h => !h.sign && !visited.has(h.id) && !builtHouses[h.id]);
+
+            if (index === -1)
+            {
+                console.warn(`Map ${map.id}: no space for new building sites and nothing left to demolish`);
+                break;
+            }
+
+            const victim = houseSpecs.splice(index, 1)[0];
+
+            siteSpecs.push({ id: victim.id, col: victim.col, row: victim.row, w: victim.w, h: victim.h });
+            demolished.add(victim.id);
+            saveDemolished([ ...demolished ]);
+        }
+
+        available++;
+    }
 
     //  Shared by plain H tiles, legend characters and map objects.
     //  Every house gets a unique, stable id.
@@ -265,10 +406,6 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
                     scene.add.rectangle(cx, cy, 60, 8, 0xffffff);
                 }
             }
-            else if (t === 'H')
-            {
-                placeHouse(`${map.id}-house-${c}x${r}`, c, r, 1, 1);
-            }
             else if (t === 'T')
             {
                 const tree = scene.add.circle(cx, cy, 34, 0x2e7d32);
@@ -291,15 +428,6 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
                 const water = scene.add.rectangle(cx, cy, TILE, TILE);
                 solid(water);
-            }
-            else if (t !== '.' && map.legend?.[t])
-            {
-                const entry = map.legend[t];
-
-                if (entry.type === 'house')
-                {
-                    placeHouse(`${map.id}-house-${c}x${r}`, c, r, 1, 1, entry.colour, entry.facing, entry.sign);
-                }
             }
         }
     }
@@ -328,30 +456,26 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         sites.push({ id, x: sx, y: sy, width: sw, height: sh });
     };
 
-    //  Free-standing objects, on top of the grid
-    map.objects?.forEach((obj, index) => {
+    //  Draw everything the data pass decided on
+    for (const spec of houseSpecs)
+    {
+        placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, spec.colour, spec.facing, spec.sign);
+    }
 
-        if (obj.type === 'house')
+    for (const spec of siteSpecs)
+    {
+        const built = builtHouses[spec.id];
+
+        if (built)
         {
-            placeHouse(obj.id ?? `${map.id}-object-${index}`, obj.col, obj.row, obj.w ?? 1, obj.h ?? 1, obj.colour, obj.facing, obj.sign);
+            //  The player built here: a real house stands on the plot now
+            placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, built.colour, 'south');
         }
-        else if (obj.type === 'site')
+        else
         {
-            const id = obj.id ?? `${map.id}-site-${index}`;
-            const built = builtHouses[id];
-
-            if (built)
-            {
-                //  The player built here: a real house stands on the plot now
-                placeHouse(id, obj.col, obj.row, obj.w ?? 1, obj.h ?? 1, built.colour, 'south');
-            }
-            else
-            {
-                placeSite(id, obj.col, obj.row, obj.w ?? 1, obj.h ?? 1);
-            }
+            placeSite(spec.id, spec.col, spec.row, spec.w, spec.h);
         }
-
-    });
+    }
 
     //  Parked cars scattered along the roads, as obstacles to steer around
     const facingRotation: Record<Edge, number> = {

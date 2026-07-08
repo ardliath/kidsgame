@@ -1,6 +1,9 @@
 const SAVE_KEY = 'kids-game-save';
 const CAR_KEY = 'kids-game-car';
 const BUILT_KEY = 'kids-game-built';
+const EXTRA_SITES_KEY = 'kids-game-extra-sites';
+const DEMOLISHED_KEY = 'kids-game-demolished';
+const VISITED_KEY = 'kids-game-visited';
 
 export interface SaveData
 {
@@ -99,5 +102,85 @@ export function saveBuiltHouse (siteId: string, colour: string)
     catch
     {
         //  The house will still appear this session, it just won't survive a reload
+    }
+}
+
+//  Building sites the game has added on empty grass to keep at least two
+//  plots available per map, keyed by map id
+export interface ExtraSite
+{
+    id: string;
+    col: number;
+    row: number;
+}
+
+export function loadExtraSites (): Record<string, ExtraSite[]>
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(EXTRA_SITES_KEY) ?? '{}') as Record<string, ExtraSite[]>;
+    }
+    catch
+    {
+        return {};
+    }
+}
+
+export function saveExtraSite (mapId: string, site: ExtraSite)
+{
+    try
+    {
+        const all = loadExtraSites();
+        const list = all[mapId] ?? [];
+
+        if (!list.some(s => s.id === site.id))
+        {
+            list.push(site);
+            all[mapId] = list;
+            localStorage.setItem(EXTRA_SITES_KEY, JSON.stringify(all));
+        }
+    }
+    catch
+    {
+        //  Ignore: the site will simply be re-chosen next time
+    }
+}
+
+//  Houses knocked down to make room for new building sites
+export function loadDemolished (): string[]
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(DEMOLISHED_KEY) ?? '[]') as string[];
+    }
+    catch
+    {
+        return [];
+    }
+}
+
+export function saveDemolished (ids: string[])
+{
+    try
+    {
+        localStorage.setItem(DEMOLISHED_KEY, JSON.stringify(ids));
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
+//  Houses the player has been inside. Nothing writes this yet — the visit
+//  feature will — but demolition already respects it.
+export function loadVisitedHouses (): string[]
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(VISITED_KEY) ?? '[]') as string[];
+    }
+    catch
+    {
+        return [];
     }
 }
