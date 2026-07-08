@@ -263,6 +263,24 @@ export class Interior extends Scene
             layer.add(this.add.rectangle(counterX - 18, FLOOR_Y - 132, 6, 32, 0x90a4ae));
             layer.add(this.add.rectangle(counterX - 8, FLOOR_Y - 146, 26, 6, 0x90a4ae));
         }
+
+        //  Tap the cooker to cook something
+        const label = this.add.text(cookerX, FLOOR_Y - 215, 'COOK', {
+            fontFamily: 'Arial Black', fontSize: 22, color: '#ffffff', stroke: '#000000', strokeThickness: 5
+        }).setOrigin(0.5);
+        layer.add(label);
+
+        this.tweens.add({ targets: label, y: label.y - 8, duration: 600, yoyo: true, repeat: -1 });
+
+        const zone = this.add.zone(cookerX, FLOOR_Y - 90, 120, 190).setInteractive();
+        layer.add(zone);
+        zone.on('pointerdown', () => this.openCooking());
+    }
+
+    openCooking ()
+    {
+        this.scene.launch('Cooking', { houseId: this.houseId });
+        this.scene.pause();
     }
 
     drawLiving (room: Room)

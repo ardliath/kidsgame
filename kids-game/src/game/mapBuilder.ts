@@ -111,7 +111,7 @@ export const NAMED_COLOURS: Record<string, number> = {
     grey: 0x90a4ae
 };
 
-function parseColour (name: string | undefined, fallback: number): number
+export function parseColour (name: string | undefined, fallback: number): number
 {
     if (!name)
     {

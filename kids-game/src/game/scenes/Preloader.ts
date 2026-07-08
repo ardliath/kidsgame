@@ -39,6 +39,8 @@ export class Preloader extends Scene
         {
             this.load.json(mapCacheKey(id), `maps/${id}.json`);
         }
+
+        this.load.json('recipes', 'recipes.json');
     }
 
     create ()
