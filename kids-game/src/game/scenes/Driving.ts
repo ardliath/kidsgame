@@ -6,6 +6,13 @@ import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedS
 import { loadCarStyle, loadCurrentMap, saveCurrentMap, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
+//  Speed at which steering reaches full grip, and the fastest the car can
+//  turn once gripped. Turn radius at full lock bottoms out at
+//  GRIP_SPEED / MAX_TURN_RATE, so these two together set how tight a
+//  corner feels — keep that above ~half a tile or it starts to spin in place.
+const GRIP_SPEED = 130;
+const MAX_TURN_RATE = 1.1;
+
 interface EntryState
 {
     x: number;
@@ -340,9 +347,11 @@ export class Driving extends Scene
             this.speed = Math.max(this.speed - rate * dt, target);
         }
 
-        //  Can only turn while moving; steering flips when reversing, like a real car
-        const grip = Phaser.Math.Clamp(Math.abs(this.speed) / 130, 0, 1);
-        this.heading += steering * 2.4 * grip * Math.sign(this.speed) * dt;
+        //  Can only turn while moving; steering flips when reversing, like a real car.
+        //  Turn radius at full lock is GRIP_SPEED / MAX_TURN_RATE once gripped,
+        //  so tune those two to make corners feel like a curve, not a spin.
+        const grip = Phaser.Math.Clamp(Math.abs(this.speed) / GRIP_SPEED, 0, 1);
+        this.heading += steering * MAX_TURN_RATE * grip * Math.sign(this.speed) * dt;
 
         const body = this.car.body as Phaser.Physics.Arcade.Body;
         body.setVelocity(Math.sin(this.heading) * this.speed, -Math.cos(this.heading) * this.speed);
