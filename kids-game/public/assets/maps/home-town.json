@@ -25,7 +25,9 @@
             "h": 2,
             "colour": "green",
             "facing": "south"
-        }
+        },
+        { "id": "home-plot-1", "type": "site", "col": 3, "row": 4 },
+        { "id": "home-plot-2", "type": "site", "col": 7, "row": 10 }
     ],
     "cars": [
         { "col": 4, "row": 3, "facing": "east", "colour": "blue", "model": "hatch" },

@@ -18,6 +18,9 @@
     "legend": {
         "B": { "type": "house", "colour": "blue", "facing": "west" }
     },
+    "objects": [
+        { "id": "hill-plot-1", "type": "site", "col": 4, "row": 9 }
+    ],
     "cars": [
         { "col": 5, "row": 2, "facing": "east", "colour": "red", "model": "hatch" },
         { "col": 8, "row": 4, "facing": "south", "colour": "teal", "model": "truck" },

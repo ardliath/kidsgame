@@ -1,5 +1,6 @@
 const SAVE_KEY = 'kids-game-save';
 const CAR_KEY = 'kids-game-car';
+const BUILT_KEY = 'kids-game-built';
 
 export interface SaveData
 {
@@ -68,5 +69,35 @@ export function loadCarStyle (): CarStyle | null
     catch
     {
         return null;
+    }
+}
+
+//  Houses the player has built on construction sites, keyed by site id.
+//  These are layered on top of the JSON maps when a town is built.
+export type BuiltHouses = Record<string, { colour: string }>;
+
+export function loadBuiltHouses (): BuiltHouses
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(BUILT_KEY) ?? '{}') as BuiltHouses;
+    }
+    catch
+    {
+        return {};
+    }
+}
+
+export function saveBuiltHouse (siteId: string, colour: string)
+{
+    try
+    {
+        const all = loadBuiltHouses();
+        all[siteId] = { colour };
+        localStorage.setItem(BUILT_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  The house will still appear this session, it just won't survive a reload
     }
 }

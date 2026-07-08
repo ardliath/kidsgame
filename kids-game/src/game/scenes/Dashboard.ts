@@ -298,14 +298,19 @@ export class Dashboard extends Scene
         this.add.zone(GAME_WIDTH - 50, 50, 90, 90).setInteractive().on('pointerdown', () => this.openOptions());
     }
 
-    openOptions ()
+    //  Drop the controls so the car isn't stuck accelerating while paused
+    releaseControls ()
     {
-        //  Drop the controls so the car isn't stuck accelerating while paused
         this.releaseAll();
         this.wheelPointerId = -1;
         this.wheelRotation = 0;
         this.wheel.rotation = 0;
         this.registry.set('steering', 0);
+    }
+
+    openOptions ()
+    {
+        this.releaseControls();
 
         this.scene.pause('Driving');
         this.scene.launch('Options');

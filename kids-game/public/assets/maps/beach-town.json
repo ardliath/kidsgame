@@ -26,7 +26,8 @@
             "colour": "pink",
             "facing": "south",
             "sign": "ICE CREAM"
-        }
+        },
+        { "id": "beach-plot-1", "type": "site", "col": 4, "row": 8 }
     ],
     "cars": [
         { "col": 6, "row": 2, "facing": "south", "colour": "blue", "model": "hatch" },

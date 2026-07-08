@@ -25,7 +25,8 @@
             "h": 2,
             "colour": "teal",
             "facing": "south"
-        }
+        },
+        { "id": "cove-plot-1", "type": "site", "col": 5, "row": 8 }
     ],
     "cars": [
         { "col": 3, "row": 2, "facing": "south", "colour": "red", "model": "hatch" },

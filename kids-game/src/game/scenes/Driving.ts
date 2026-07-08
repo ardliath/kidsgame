@@ -2,8 +2,9 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes, DEFAULT_COLOUR, DEFAULT_MODEL } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
-import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, TILE } from '../mapBuilder';
+import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedSite, TILE } from '../mapBuilder';
 import { loadCarStyle, SaveData } from '../storage';
+import { Dashboard } from './Dashboard';
 
 interface EntryState
 {
@@ -30,6 +31,10 @@ export class Driving extends Scene
     mapHeight = 0;
     startPos: { x: number; y: number };
     houses: PlacedHouse[] = [];
+    sites: PlacedSite[] = [];
+
+    buildBubble: Phaser.GameObjects.Container;
+    bubbleTarget: PlacedSite | null = null;
     transitioning = false;
     sceneData: DrivingData = {};
 
@@ -76,6 +81,8 @@ export class Driving extends Scene
         this.mapHeight = built.height;
         this.startPos = built.start;
         this.houses = built.houses;
+        this.sites = built.sites;
+        this.bubbleTarget = null;
 
         this.physics.world.setBounds(0, 0, built.width, built.height);
 
@@ -108,10 +115,88 @@ export class Driving extends Scene
 
         this.tweens.add({ targets: label, alpha: 0, delay: 1500, duration: 500 });
 
+        this.createBuildBubble();
+
+        this.input.keyboard?.on('keydown-ENTER', () => {
+
+            if (this.bubbleTarget)
+            {
+                this.openBuilder(this.bubbleTarget);
+            }
+
+        });
+
         if (!this.scene.isActive('Dashboard'))
         {
             this.scene.launch('Dashboard');
         }
+    }
+
+    createBuildBubble ()
+    {
+        const bg = this.add.rectangle(0, 0, 170, 56, 0xffeb3b);
+        bg.setStrokeStyle(5, 0x795548);
+
+        const label = this.add.text(0, 0, 'BUILD', {
+            fontFamily: 'Arial Black', fontSize: 28, color: '#5d4037'
+        }).setOrigin(0.5);
+
+        this.buildBubble = this.add.container(0, 0, [ bg, label ]);
+        this.buildBubble.setDepth(100);
+        this.buildBubble.setVisible(false);
+
+        bg.setInteractive().on('pointerdown', () => {
+
+            if (this.bubbleTarget)
+            {
+                this.openBuilder(this.bubbleTarget);
+            }
+
+        });
+    }
+
+    updateBuildBubble (time: number)
+    {
+        let best: PlacedSite | null = null;
+        let bestDistance = 120;
+
+        for (const site of this.sites)
+        {
+            const dx = Math.max(Math.abs(this.car.x - site.x) - site.width / 2, 0);
+            const dy = Math.max(Math.abs(this.car.y - site.y) - site.height / 2, 0);
+            const distance = Math.hypot(dx, dy);
+
+            if (distance < bestDistance)
+            {
+                best = site;
+                bestDistance = distance;
+            }
+        }
+
+        //  Only offer the site when the car has more or less stopped beside it
+        const slow = Math.abs(this.speed) < 60;
+
+        this.bubbleTarget = slow && !this.transitioning ? best : null;
+
+        if (this.bubbleTarget)
+        {
+            this.buildBubble.setVisible(true);
+            this.buildBubble.setPosition(this.bubbleTarget.x, this.bubbleTarget.y - this.bubbleTarget.height / 2 - 46 + Math.sin(time / 280) * 5);
+        }
+        else
+        {
+            this.buildBubble.setVisible(false);
+        }
+    }
+
+    openBuilder (site: PlacedSite)
+    {
+        const dashboard = this.scene.get('Dashboard') as Dashboard;
+        dashboard.releaseControls();
+
+        this.scene.launch('Builder', { siteId: site.id });
+        this.scene.pause('Dashboard');
+        this.scene.pause();
     }
 
     buildCar (x: number, y: number): Phaser.GameObjects.Container
@@ -218,12 +303,14 @@ export class Driving extends Scene
         });
     }
 
-    update (_time: number, delta: number)
+    update (time: number, delta: number)
     {
         if (this.transitioning)
         {
             return;
         }
+
+        this.updateBuildBubble(time);
 
         const dt = delta / 1000;
 

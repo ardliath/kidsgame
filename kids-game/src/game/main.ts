@@ -1,4 +1,5 @@
 import { Boot } from './scenes/Boot';
+import { Builder } from './scenes/Builder';
 import { Dashboard } from './scenes/Dashboard';
 import { Driving } from './scenes/Driving';
 import { AUTO, Game, Scale } from 'phaser';
@@ -26,7 +27,8 @@ const config: Phaser.Types.Core.GameConfig = {
         Preloader,
         Driving,
         Dashboard,
-        Options
+        Options,
+        Builder
     ]
 };
 

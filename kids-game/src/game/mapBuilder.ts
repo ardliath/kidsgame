@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
+import { loadBuiltHouses } from './storage';
 
 export const TILE = 200;
 
@@ -23,11 +24,12 @@ export interface LegendEntry
     sign?: string;
 }
 
-//  Free-standing things with properties, placed on top of the tile grid
+//  Free-standing things with properties, placed on top of the tile grid.
+//  A 'site' is an empty plot the player can build a house on.
 export interface MapObject
 {
     id?: string;
-    type: 'house';
+    type: 'house' | 'site';
     col: number;
     row: number;
     w?: number;
@@ -71,6 +73,16 @@ export interface PlacedHouse
     sign?: string;
 }
 
+//  A construction site that hasn't been built on yet
+export interface PlacedSite
+{
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 export interface BuiltMap
 {
     obstacles: Phaser.Physics.Arcade.StaticGroup;
@@ -78,11 +90,12 @@ export interface BuiltMap
     height: number;
     start: { x: number; y: number };
     houses: PlacedHouse[];
+    sites: PlacedSite[];
 }
 
 const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
 
-const NAMED_COLOURS: Record<string, number> = {
+export const NAMED_COLOURS: Record<string, number> = {
     red: 0xe53935,
     orange: 0xfb8c00,
     yellow: 0xfdd835,
@@ -137,7 +150,11 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     };
 
     const houses: PlacedHouse[] = [];
+    const sites: PlacedSite[] = [];
     const usedIds = new Set<string>();
+
+    //  Houses the player has already built on this map's sites
+    const builtHouses = loadBuiltHouses();
 
     //  Shared by plain H tiles, legend characters and map objects.
     //  Every house gets a unique, stable id.
@@ -287,12 +304,51 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
+    //  An empty plot: dirt, corner stakes and a construction sign
+    const placeSite = (id: string, col: number, row: number, w: number, h: number) => {
+
+        const sx = (col + w / 2) * TILE;
+        const sy = (row + h / 2) * TILE;
+        const sw = w * TILE - 40;
+        const sh = h * TILE - 40;
+
+        const dirt = scene.add.rectangle(sx, sy, sw, sh, 0xa1887f);
+        dirt.setStrokeStyle(6, 0x795548);
+
+        for (const dx of [ -1, 1 ])
+        {
+            for (const dy of [ -1, 1 ])
+            {
+                scene.add.rectangle(sx + dx * (sw / 2 - 10), sy + dy * (sh / 2 - 10), 16, 16, 0x6d4c41);
+            }
+        }
+
+        scene.add.text(sx, sy, '🚧', { fontSize: 44 }).setOrigin(0.5);
+
+        sites.push({ id, x: sx, y: sy, width: sw, height: sh });
+    };
+
     //  Free-standing objects, on top of the grid
     map.objects?.forEach((obj, index) => {
 
         if (obj.type === 'house')
         {
             placeHouse(obj.id ?? `${map.id}-object-${index}`, obj.col, obj.row, obj.w ?? 1, obj.h ?? 1, obj.colour, obj.facing, obj.sign);
+        }
+        else if (obj.type === 'site')
+        {
+            const id = obj.id ?? `${map.id}-site-${index}`;
+            const built = builtHouses[id];
+
+            if (built)
+            {
+                //  The player built here: a real house stands on the plot now
+                placeHouse(id, obj.col, obj.row, obj.w ?? 1, obj.h ?? 1, built.colour, 'south');
+            }
+            else
+            {
+                placeSite(id, obj.col, obj.row, obj.w ?? 1, obj.h ?? 1);
+            }
         }
 
     });
@@ -330,7 +386,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
         : { x: width / 2, y: height / 2 };
 
-    return { obstacles, width, height, start, houses };
+    return { obstacles, width, height, start, houses, sites };
 }
 
 //  Invisible walls along each map edge, with openings only where a road
