@@ -77,6 +77,7 @@ export class Dashboard extends Scene
         this.createGearStick();
         this.createPedal();
         this.createSettingsCog();
+        this.createMapButton();
 
         this.repaintPanel();
         this.registry.events.on('changedata-carColour', this.repaintPanel, this);
@@ -298,6 +299,24 @@ export class Dashboard extends Scene
         this.add.zone(GAME_WIDTH - 50, 50, 90, 90).setInteractive().on('pointerdown', () => this.openOptions());
     }
 
+    createMapButton ()
+    {
+        const parts: Phaser.GameObjects.GameObject[] = [
+            this.add.circle(0, 0, 36, 0x102027, 0.45)
+        ];
+
+        //  A little folded map with a location pin
+        parts.push(this.add.rectangle(0, 0, 44, 34, 0xcfd8dc).setStrokeStyle(3, 0x455a64));
+        parts.push(this.add.rectangle(-8, 0, 3, 34, 0x90a4ae));
+        parts.push(this.add.rectangle(9, 0, 3, 34, 0x90a4ae));
+        parts.push(this.add.circle(4, -3, 6, 0xef5350));
+        parts.push(this.add.triangle(4, 6, 0, 0, 12, 0, 6, 10, 0xef5350));
+
+        this.add.container(GAME_WIDTH - 140, 50, parts);
+
+        this.add.zone(GAME_WIDTH - 140, 50, 90, 90).setInteractive().on('pointerdown', () => this.openMap());
+    }
+
     //  Drop the controls so the car isn't stuck accelerating while paused
     releaseControls ()
     {
@@ -314,6 +333,15 @@ export class Dashboard extends Scene
 
         this.scene.pause('Driving');
         this.scene.launch('Options');
+        this.scene.pause();
+    }
+
+    openMap ()
+    {
+        this.releaseControls();
+
+        this.scene.pause('Driving');
+        this.scene.launch('MiniMap');
         this.scene.pause();
     }
 

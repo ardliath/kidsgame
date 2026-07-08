@@ -6,6 +6,7 @@ import { Driving } from './scenes/Driving';
 import { AUTO, Game, Scale } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from './layout';
 import { Interior } from './scenes/Interior';
+import { MiniMap } from './scenes/MiniMap';
 import { Options } from './scenes/Options';
 import { Preloader } from './scenes/Preloader';
 import { Shop } from './scenes/Shop';
@@ -34,7 +35,8 @@ const config: Phaser.Types.Core.GameConfig = {
         Builder,
         Interior,
         Cooking,
-        Shop
+        Shop,
+        MiniMap
     ]
 };
 
