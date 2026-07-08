@@ -3,7 +3,7 @@ import { Scene } from 'phaser';
 import { buildCarShapes, DEFAULT_COLOUR, DEFAULT_MODEL } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedSite, TILE } from '../mapBuilder';
-import { loadCarStyle, loadCurrentMap, saveCurrentMap, SaveData } from '../storage';
+import { loadCarStyle, loadCoins, loadCurrentMap, saveCurrentMap, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -22,10 +22,11 @@ interface EntryState
 }
 
 //  What the pop-up bubble beside the car offers: building on a plot,
-//  or visiting a house
+//  visiting a house, or going into a shop
 type ActionTarget =
     { kind: 'build'; site: PlacedSite } |
-    { kind: 'visit'; house: PlacedHouse };
+    { kind: 'visit'; house: PlacedHouse } |
+    { kind: 'shop'; house: PlacedHouse };
 
 interface DrivingData
 {
@@ -84,6 +85,11 @@ export class Driving extends Scene
             this.registry.set('carModel', style?.model ?? DEFAULT_MODEL);
         }
 
+        if (this.registry.get('coins') === undefined)
+        {
+            this.registry.set('coins', loadCoins());
+        }
+
         //  Extra pointers so the wheel, pedal and gear stick work at the same time
         this.input.addPointer(3);
 
@@ -131,12 +137,14 @@ export class Driving extends Scene
         cam.fadeIn(200, 16, 32, 39);
 
         //  Town name, fades out after a moment
-        const label = this.add.text(20, 16, this.map.name, {
+        const label = this.add.text(20, 64, this.map.name, {
             fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff',
             stroke: '#000000', strokeThickness: 6
         }).setScrollFactor(0);
 
         this.tweens.add({ targets: label, alpha: 0, delay: 1500, duration: 500 });
+
+        this.createCoinHud();
 
         this.createActionBubble();
 
@@ -153,6 +161,29 @@ export class Driving extends Scene
         {
             this.scene.launch('Dashboard');
         }
+    }
+
+    createCoinHud ()
+    {
+        const bg = this.add.rectangle(0, 0, 130, 48, 0x102027, 0.65);
+        bg.setStrokeStyle(3, 0xffd54f);
+
+        const coin = this.add.circle(-38, 0, 15, 0xffd54f).setStrokeStyle(3, 0xf9a825);
+
+        const count = this.add.text(10, 0, String(this.registry.get('coins') ?? 0), {
+            fontFamily: 'Arial Black', fontSize: 26, color: '#ffd54f'
+        }).setOrigin(0.5);
+
+        const hud = this.add.container(90, 40, [ bg, coin, count ]);
+        hud.setScrollFactor(0);
+        hud.setDepth(200);
+
+        const onCoins = (_parent: unknown, value: number) => count.setText(String(value));
+        this.registry.events.on('changedata-coins', onCoins);
+
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+            this.registry.events.off('changedata-coins', onCoins);
+        });
     }
 
     createActionBubble ()
@@ -197,10 +228,15 @@ export class Driving extends Scene
 
         for (const house of this.houses)
         {
-            //  Houses can be visited; shops (signed buildings) can't yet
             if (!house.sign)
             {
+                //  Ordinary houses can be visited
                 consider(house.x, house.y, house.width, house.height, { kind: 'visit', house });
+            }
+            else if (house.sells && house.sells.length > 0)
+            {
+                //  Signed buildings with stock are shops
+                consider(house.x, house.y, house.width, house.height, { kind: 'shop', house });
             }
         }
 
@@ -231,11 +267,17 @@ export class Driving extends Scene
                 this.bubbleBg.setStrokeStyle(5, 0x795548);
                 this.bubbleLabel.setText('BUILD').setColor('#5d4037');
             }
-            else
+            else if (this.bubbleTarget.kind === 'visit')
             {
                 this.bubbleBg.setFillStyle(0xe1f5fe);
                 this.bubbleBg.setStrokeStyle(5, 0x0277bd);
                 this.bubbleLabel.setText('VISIT').setColor('#01579b');
+            }
+            else
+            {
+                this.bubbleBg.setFillStyle(0xc8e6c9);
+                this.bubbleBg.setStrokeStyle(5, 0x2e7d32);
+                this.bubbleLabel.setText('SHOP').setColor('#1b5e20');
             }
 
             this.actionBubble.setVisible(true);
@@ -256,9 +298,13 @@ export class Driving extends Scene
         {
             this.scene.launch('Builder', { siteId: target.site.id });
         }
-        else
+        else if (target.kind === 'visit')
         {
             this.scene.launch('Interior', { houseId: target.house.id, colour: target.house.colour });
+        }
+        else
+        {
+            this.scene.launch('Shop', { houseId: target.house.id, colour: target.house.colour, sells: target.house.sells ?? [] });
         }
 
         this.scene.pause('Dashboard');

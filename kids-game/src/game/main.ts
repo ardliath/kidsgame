@@ -8,6 +8,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from './layout';
 import { Interior } from './scenes/Interior';
 import { Options } from './scenes/Options';
 import { Preloader } from './scenes/Preloader';
+import { Shop } from './scenes/Shop';
 
 //  Find out more information about the Game Config at:
 //  https://docs.phaser.io/api-documentation/typedef/types-core#gameconfig
@@ -32,7 +33,8 @@ const config: Phaser.Types.Core.GameConfig = {
         Options,
         Builder,
         Interior,
-        Cooking
+        Cooking,
+        Shop
     ]
 };
 

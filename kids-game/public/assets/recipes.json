@@ -1,8 +1,8 @@
 {
     "ingredients": {
-        "bread": { "name": "Bread", "colour": "#e0b070", "icon": "bread" },
-        "pasta": { "name": "Pasta", "colour": "#ffd54f", "icon": "pasta" },
-        "apple-juice": { "name": "Apple juice", "colour": "#9ccc65", "icon": "carton" },
+        "bread": { "name": "Bread", "colour": "#e0b070", "icon": "bread", "price": 1 },
+        "pasta": { "name": "Pasta", "colour": "#ffd54f", "icon": "pasta", "price": 2 },
+        "apple-juice": { "name": "Apple juice", "colour": "#9ccc65", "icon": "carton", "price": 2 },
         "water": { "name": "Water", "colour": "#4fc3f7", "icon": "jug" }
     },
     "recipes": [

@@ -21,6 +21,7 @@ export interface IngredientDef
     name: string;
     colour: string;
     icon: string;
+    price?: number;
 }
 
 export type CookStepType = 'fetch' | 'pour' | 'add' | 'stir' | 'toast';

@@ -7,6 +7,8 @@ const VISITED_KEY = 'kids-game-visited';
 const MAP_KEY = 'kids-game-map';
 const INTERIORS_KEY = 'kids-game-interiors';
 const NAME_KEY = 'kids-game-name';
+const COINS_KEY = 'kids-game-coins';
+const BAG_KEY = 'kids-game-bag';
 
 export interface SaveData
 {
@@ -231,6 +233,61 @@ export function saveVisitedHouse (houseId: string)
     }
 }
 
+//  Pocket money, earned by building houses and spent in shops
+export function loadCoins (): number
+{
+    try
+    {
+        const raw = localStorage.getItem(COINS_KEY);
+
+        return raw === null ? 5 : Math.max(0, parseInt(raw, 10) || 0);
+    }
+    catch
+    {
+        return 5;
+    }
+}
+
+export function saveCoins (coins: number)
+{
+    try
+    {
+        localStorage.setItem(COINS_KEY, String(Math.max(0, Math.round(coins))));
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
+//  The shopping bag rides in the car: groceries bought at a shop, usable
+//  in any kitchen
+export type Bag = Record<string, number>;
+
+export function loadBag (): Bag
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(BAG_KEY) ?? '{}') as Bag;
+    }
+    catch
+    {
+        return {};
+    }
+}
+
+export function saveBag (bag: Bag)
+{
+    try
+    {
+        localStorage.setItem(BAG_KEY, JSON.stringify(bag));
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
 //  The player's name, so the people in the houses can greet him properly
 export function loadPlayerName (): string
 {
@@ -276,6 +333,10 @@ export interface InteriorSpec
     tints: Record<string, number>;
     variants: Record<string, number>;
     people: InteriorPerson[];
+
+    //  What's in this house's fridge, by ingredient id. Older specs don't
+    //  have it; the cooking scene fills it in with a starting stock.
+    fridge?: Record<string, number>;
 }
 
 export function loadInteriors (): Record<string, InteriorSpec>

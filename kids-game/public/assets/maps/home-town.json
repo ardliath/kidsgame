@@ -27,7 +27,19 @@
             "facing": "south"
         },
         { "id": "home-plot-1", "type": "site", "col": 3, "row": 4 },
-        { "id": "home-plot-2", "type": "site", "col": 7, "row": 10 }
+        { "id": "home-plot-2", "type": "site", "col": 7, "row": 10 },
+        {
+            "id": "corner-shop",
+            "type": "house",
+            "col": 3,
+            "row": 6,
+            "w": 2,
+            "h": 1,
+            "colour": "orange",
+            "facing": "west",
+            "sign": "SHOP",
+            "sells": [ "bread", "pasta", "apple-juice" ]
+        }
     ],
     "cars": [
         { "col": 4, "row": 3, "facing": "east", "colour": "blue", "model": "hatch" },

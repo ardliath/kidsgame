@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { NAMED_COLOURS } from '../mapBuilder';
-import { saveBuiltHouse } from '../storage';
+import { loadCoins, saveBuiltHouse, saveCoins } from '../storage';
 import { Driving } from './Driving';
 
 const CX = GAME_WIDTH / 2;
@@ -16,6 +16,9 @@ const GROUND_Y = 700;
 const WALL_LEFT = CX - (BRICK_COLS * BRICK_W) / 2;
 
 const SWATCH_NAMES = [ 'red', 'orange', 'yellow', 'green', 'blue', 'purple' ];
+
+//  Builders get paid!
+const BUILD_REWARD = 5;
 
 interface Mound
 {
@@ -395,8 +398,27 @@ export class Builder extends Scene
 
         saveBuiltHouse(this.siteId, this.chosenColour);
 
-        this.instruction.setText('You built a house!');
+        //  Pay the builder
+        const coins = ((this.registry.get('coins') as number) ?? loadCoins()) + BUILD_REWARD;
+        this.registry.set('coins', coins);
+        saveCoins(coins);
+
+        this.instruction.setText(`You built a house! +${BUILD_REWARD} coins!`);
         this.tweens.add({ targets: this.instruction, scale: 1.25, duration: 300, yoyo: true, repeat: 2 });
+
+        //  Coin shower
+        for (let i = 0; i < BUILD_REWARD; i++)
+        {
+            const coin = this.add.circle(CX - 100 + i * 50, -30, 18, 0xffd54f).setStrokeStyle(4, 0xf9a825);
+
+            this.tweens.add({
+                targets: coin,
+                y: 240 + Math.random() * 60,
+                duration: 500 + i * 120,
+                ease: 'Bounce.Out',
+                delay: i * 90
+            });
+        }
 
         //  Give the celebration a moment, then drive off with the new house in place
         this.time.delayedCall(1400, () => {

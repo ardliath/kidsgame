@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { CookStep, drawFoodIcon, foodColour, RecipeConfig, RecipeDef, recipeSteps } from '../recipes';
+import { Bag, InteriorSpec, loadBag, loadInteriors, saveBag, saveInterior } from '../storage';
 import { Interior } from './Interior';
 
 const CX = GAME_WIDTH / 2;
@@ -48,9 +49,21 @@ export class Cooking extends Scene
     stirFrom = PALE_FOOD;
     spoon: Phaser.GameObjects.Rectangle | null = null;
 
+    //  This house's fridge stock, plus the shopping bag from the car.
+    //  Fetch steps use fridge first, then bag; empty means a shop trip.
+    houseId = '';
+    houseSpec: InteriorSpec | null = null;
+    fridge: Record<string, number> = {};
+    bag: Bag = {};
+
     constructor ()
     {
         super('Cooking');
+    }
+
+    init (data: { houseId: string })
+    {
+        this.houseId = data?.houseId ?? '';
     }
 
     create ()
@@ -58,6 +71,37 @@ export class Cooking extends Scene
         this.config = this.cache.json.get('recipes') as RecipeConfig;
         this.recipe = null;
         this.busy = false;
+
+        //  Older houses have no fridge stock yet: start them with 2 of everything
+        this.houseSpec = loadInteriors()[this.houseId] ?? null;
+        this.bag = loadBag();
+
+        if (this.houseSpec && !this.houseSpec.fridge)
+        {
+            this.houseSpec.fridge = {};
+
+            for (const id of Object.keys(this.config.ingredients))
+            {
+                this.houseSpec.fridge[id] = 2;
+            }
+
+            saveInterior(this.houseId, this.houseSpec);
+        }
+
+        if (this.houseSpec)
+        {
+            this.fridge = this.houseSpec.fridge ?? {};
+        }
+        else
+        {
+            //  No known house (shouldn't happen): don't block cooking
+            this.fridge = {};
+
+            for (const id of Object.keys(this.config.ingredients))
+            {
+                this.fridge[id] = 2;
+            }
+        }
 
         //  A warm little kitchen backdrop
         this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfff8e1);
@@ -259,11 +303,32 @@ export class Cooking extends Scene
             item.setScale(1.4);
             this.stepLayer.add(item);
 
+            //  How many we have: this fridge plus the shopping bag
+            const count = this.available(id);
+
+            if (count > 0)
+            {
+                const badge = this.add.text(x + 38, y - 38, `x${count}`, {
+                    fontFamily: 'Arial Black', fontSize: 20, color: '#5d4037',
+                    stroke: '#ffffff', strokeThickness: 5
+                }).setOrigin(0.5);
+                this.stepLayer.add(badge);
+            }
+            else
+            {
+                item.setAlpha(0.35);
+            }
+
             const zone = this.add.zone(x, y, 100, 100).setInteractive();
             zone.on('pointerdown', () => this.fetchItem(step.ingredient ?? '', id, item, zone, tracker));
             this.stepLayer.add(zone);
 
         });
+    }
+
+    available (id: string): number
+    {
+        return (this.fridge[id] ?? 0) + (this.bag[id] ?? 0);
     }
 
     fetchItem (want: string, got: string, item: Phaser.GameObjects.Container, zone: Phaser.GameObjects.Zone, tracker: Phaser.GameObjects.Container)
@@ -274,6 +339,33 @@ export class Cooking extends Scene
             this.tweens.add({ targets: item, x: item.x + 10, duration: 60, yoyo: true, repeat: 2 });
 
             return;
+        }
+
+        if (this.available(want) <= 0)
+        {
+            //  The right item, but none left: send him shopping
+            const def = this.config.ingredients[want];
+            this.instruction.setText(`No ${def?.name.toLowerCase() ?? 'food'} left! Buy some at the shop`);
+            this.tweens.add({ targets: item, x: item.x + 10, duration: 60, yoyo: true, repeat: 2 });
+
+            return;
+        }
+
+        //  Use up the fridge first, then the shopping bag
+        if ((this.fridge[want] ?? 0) > 0)
+        {
+            this.fridge[want] = (this.fridge[want] ?? 0) - 1;
+
+            if (this.houseSpec)
+            {
+                this.houseSpec.fridge = this.fridge;
+                saveInterior(this.houseId, this.houseSpec);
+            }
+        }
+        else
+        {
+            this.bag[want] = Math.max(0, (this.bag[want] ?? 0) - 1);
+            saveBag(this.bag);
         }
 
         this.lastFetched = got;
