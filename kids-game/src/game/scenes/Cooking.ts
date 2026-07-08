@@ -10,6 +10,9 @@ const GLASS_FULL = 120;
 const WATER_COLOUR = 0x4fc3f7;
 const PALE_FOOD = 0xfff3c4;
 
+//  How far the jug/carton tips while pouring (radians, clockwise)
+const POUR_TILT = 0.5;
+
 export class Cooking extends Scene
 {
     config: RecipeConfig;
@@ -295,24 +298,40 @@ export class Cooking extends Scene
         this.pourTarget = step.into ?? 'glass';
         this.pouringPointer = -1;
 
+        //  Where the spout ends up once the container tilts by POUR_TILT, so the
+        //  stream can start exactly at the spout rather than floating beside it
+        const spoutAfterTilt = (sx: number, sy: number, scale: number) => ({
+            x: (sx * scale) * Math.cos(POUR_TILT) - (sy * scale) * Math.sin(POUR_TILT),
+            y: (sx * scale) * Math.sin(POUR_TILT) + (sy * scale) * Math.cos(POUR_TILT)
+        });
+
         if (this.pourTarget === 'glass')
         {
             const glassX = CX + 90;
             const glassBottom = COUNTER_Y - 14;
+            const scale = 2.4;
+
+            //  The carton pours from its top spout
+            const spout = spoutAfterTilt(0, -25, scale);
+            const spoutX = glassX;
+            const spoutY = glassBottom - 220;
 
             this.stepLayer.add(this.add.rectangle(glassX, glassBottom - 70, 110, 140, 0xe3f2fd, 0.4).setStrokeStyle(5, 0x90caf9));
 
             this.liquid = this.add.rectangle(glassX, glassBottom - 6, 96, GLASS_FULL, colour).setOrigin(0.5, 1).setScale(1, 0.01);
             this.stepLayer.add(this.liquid);
 
-            this.stream = this.add.rectangle(glassX - 24, glassBottom - 200, 14, 130, colour).setOrigin(0.5, 0).setVisible(false);
+            this.stream = this.add.rectangle(spoutX, spoutY, 14, (glassBottom - 40) - spoutY, colour).setOrigin(0.5, 0).setVisible(false);
             this.stepLayer.add(this.stream);
 
-            this.carton = this.add.container(CX - 110, COUNTER_Y - 290, drawFoodIcon(this, def?.icon ?? 'carton', def?.colour ?? '#9ccc65'));
-            this.carton.setScale(2.4);
+            const cartonX = spoutX - spout.x;
+            const cartonY = spoutY - spout.y;
+
+            this.carton = this.add.container(cartonX, cartonY, drawFoodIcon(this, def?.icon ?? 'carton', def?.colour ?? '#9ccc65'));
+            this.carton.setScale(scale);
             this.stepLayer.add(this.carton);
 
-            const zone = this.add.zone(CX - 110, COUNTER_Y - 290, 170, 190).setInteractive();
+            const zone = this.add.zone(cartonX, cartonY, 170, 190).setInteractive();
             zone.on('pointerdown', (pointer: Phaser.Input.Pointer) => { this.pouringPointer = pointer.id; });
             this.stepLayer.add(zone);
         }
@@ -325,15 +344,22 @@ export class Cooking extends Scene
                 this.panContents.setFillStyle(colour).setAlpha(0);
             }
 
-            const jugX = this.panX - 150;
-            const jugY = this.panY - 210;
+            const scale = 2.2;
+
+            //  The jug pours from its right-hand spout, aimed at the pan's middle
+            const spout = spoutAfterTilt(24, -10, scale);
+            const spoutX = this.panX;
+            const spoutY = this.panY - 170;
+
+            this.stream = this.add.rectangle(spoutX, spoutY, 14, (this.panY - 6) - spoutY, colour).setOrigin(0.5, 0).setVisible(false);
+            this.stepLayer.add(this.stream);
+
+            const jugX = spoutX - spout.x;
+            const jugY = spoutY - spout.y;
 
             this.carton = this.add.container(jugX, jugY, drawFoodIcon(this, def?.icon ?? 'jug', def?.colour ?? '#4fc3f7'));
-            this.carton.setScale(2.2);
+            this.carton.setScale(scale);
             this.stepLayer.add(this.carton);
-
-            this.stream = this.add.rectangle(this.panX - 10, jugY + 40, 14, this.panY - (jugY + 40) - 6, colour).setOrigin(0.5, 0).setVisible(false);
-            this.stepLayer.add(this.stream);
 
             const zone = this.add.zone(jugX, jugY, 180, 200).setInteractive();
             zone.on('pointerdown', (pointer: Phaser.Input.Pointer) => { this.pouringPointer = pointer.id; });
@@ -586,7 +612,8 @@ export class Cooking extends Scene
 
         const pouring = this.pouringPointer !== -1;
 
-        this.carton.rotation = Phaser.Math.Linear(this.carton.rotation, pouring ? -0.5 : 0, 0.2);
+        //  Tip the spout towards the pan/glass, which sit to the lower-right
+        this.carton.rotation = Phaser.Math.Linear(this.carton.rotation, pouring ? POUR_TILT : 0, 0.2);
         this.stream.setVisible(pouring);
 
         if (!pouring || this.pourProgress >= 1)
