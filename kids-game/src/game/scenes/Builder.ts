@@ -24,6 +24,23 @@ interface Mound
     hits: number;
 }
 
+//  A single brick-shaped space in the wall. Rows alternate between full
+//  bricks and a "running bond" offset (half brick, fulls, half brick), so
+//  each brick overlaps the joint between the two bricks beneath it — just
+//  like real brickwork — rather than sitting in a plain stack.
+//  xUnits are in half-brick units from the left edge of the wall, so
+//  overlap between rows can be compared directly.
+interface BrickSlot
+{
+    row: number;
+    index: number;
+    xUnits: [number, number];
+    x: number;
+    width: number;
+    rect: Phaser.GameObjects.Rectangle;
+    laid: boolean;
+}
+
 export class Builder extends Scene
 {
     siteId = '';
@@ -32,11 +49,11 @@ export class Builder extends Scene
     mounds: Mound[] = [];
     dugCount = 0;
 
-    slots: Phaser.GameObjects.Rectangle[][] = [];
     bricks: Phaser.GameObjects.Rectangle[] = [];
-    activeRow = 0;
-    laidInRow = 0;
-    rowPulse: Phaser.Tweens.Tween | null = null;
+    brickSlots: BrickSlot[] = [];
+    pulseTweens: Map<string, Phaser.Tweens.Tween> = new Map();
+    totalPieces = 0;
+    laidCount = 0;
 
     chosenColour = 'red';
     swatchRings: Map<string, Phaser.GameObjects.Arc> = new Map();
@@ -56,11 +73,11 @@ export class Builder extends Scene
     {
         this.mounds = [];
         this.dugCount = 0;
-        this.slots = [];
         this.bricks = [];
-        this.activeRow = 0;
-        this.laidInRow = 0;
-        this.rowPulse = null;
+        this.brickSlots = [];
+        this.pulseTweens.clear();
+        this.totalPieces = 0;
+        this.laidCount = 0;
         this.chosenColour = 'red';
         this.swatchRings.clear();
         this.finished = false;
@@ -146,24 +163,7 @@ export class Builder extends Scene
 
         this.instruction.setText('Lay the bricks!');
 
-        for (let row = 0; row < BRICK_ROWS; row++)
-        {
-            const rowSlots: Phaser.GameObjects.Rectangle[] = [];
-
-            for (let col = 0; col < BRICK_COLS; col++)
-            {
-                const slot = this.add.rectangle(this.slotX(col), this.brickY(row), BRICK_W - 8, BRICK_H - 8, 0xffffff, 0.08);
-                slot.setStrokeStyle(3, 0xffffff, 0.35);
-                slot.setInteractive();
-                slot.on('pointerdown', () => this.layBrick(row, col, slot));
-
-                rowSlots.push(slot);
-            }
-
-            this.slots.push(rowSlots);
-        }
-
-        this.highlightRow();
+        this.buildBrickSlots();
     }
 
     brickY (row: number): number
@@ -171,62 +171,140 @@ export class Builder extends Scene
         return GROUND_Y - 28 - 28 - row * BRICK_H;
     }
 
-    highlightRow ()
+    //  Lays out every brick-shaped gap in the wall up front. Even rows are
+    //  full bricks; odd rows are offset by half a brick (a half brick at
+    //  each end) so every brick sits over the joint of two bricks below —
+    //  a running bond, same as a real wall.
+    buildBrickSlots ()
     {
-        this.rowPulse?.destroy();
+        const halfUnit = BRICK_W / 2;
 
-        const rowSlots = this.slots[this.activeRow].filter(s => s.active);
-
-        if (rowSlots.length > 0)
+        for (let row = 0; row < BRICK_ROWS; row++)
         {
-            this.rowPulse = this.tweens.add({
-                targets: rowSlots,
-                fillAlpha: 0.3,
-                strokeAlpha: 1,
-                duration: 400,
-                yoyo: true,
-                repeat: -1
+            const offset = row % 2 === 1;
+            const pieces: [number, number][] = [];
+
+            if (!offset)
+            {
+                for (let c = 0; c < BRICK_COLS; c++)
+                {
+                    pieces.push([ c * 2, c * 2 + 2 ]);
+                }
+            }
+            else
+            {
+                pieces.push([ 0, 1 ]);
+
+                for (let c = 0; c < BRICK_COLS - 1; c++)
+                {
+                    pieces.push([ 1 + c * 2, 3 + c * 2 ]);
+                }
+
+                pieces.push([ BRICK_COLS * 2 - 1, BRICK_COLS * 2 ]);
+            }
+
+            pieces.forEach((units, index) => {
+
+                const x = WALL_LEFT + (units[0] + units[1]) / 2 * halfUnit;
+                const width = (units[1] - units[0]) * halfUnit;
+
+                const rect = this.add.rectangle(x, this.brickY(row), width - 8, BRICK_H - 8, 0xffffff, 0.08);
+                rect.setStrokeStyle(3, 0xffffff, 0.35);
+
+                const slot: BrickSlot = { row, index, xUnits: units, x, width, rect, laid: false };
+                this.brickSlots.push(slot);
+
+                rect.on('pointerdown', () => this.layBrick(slot));
+
             });
+        }
+
+        this.totalPieces = this.brickSlots.length;
+
+        //  The ground row rests on the foundation, so it starts unlocked
+        for (const slot of this.brickSlots)
+        {
+            if (slot.row === 0)
+            {
+                this.unlockSlot(slot);
+            }
         }
     }
 
-    layBrick (row: number, col: number, slot: Phaser.GameObjects.Rectangle)
+    overlaps (a: [number, number], b: [number, number]): boolean
     {
-        //  Bricks go on bottom-up: only the lowest unfinished row accepts taps
-        if (row !== this.activeRow)
+        return a[0] < b[1] && b[0] < a[1];
+    }
+
+    isSupported (slot: BrickSlot): boolean
+    {
+        if (slot.row === 0)
         {
-            this.tweens.add({ targets: slot, x: slot.x + 6, duration: 50, yoyo: true, repeat: 1 });
+            return true;
+        }
+
+        return this.brickSlots
+            .filter(s => s.row === slot.row - 1 && this.overlaps(s.xUnits, slot.xUnits))
+            .every(s => s.laid);
+    }
+
+    unlockSlot (slot: BrickSlot)
+    {
+        slot.rect.setInteractive();
+
+        const tween = this.tweens.add({
+            targets: slot.rect,
+            fillAlpha: 0.3,
+            strokeAlpha: 1,
+            duration: 400,
+            yoyo: true,
+            repeat: -1
+        });
+
+        this.pulseTweens.set(`${slot.row}-${slot.index}`, tween);
+    }
+
+    layBrick (slot: BrickSlot)
+    {
+        //  Needs its supporting brick(s) below in place first
+        if (slot.laid || !this.isSupported(slot))
+        {
+            this.tweens.add({ targets: slot.rect, x: slot.x + 6, duration: 50, yoyo: true, repeat: 1 });
 
             return;
         }
 
-        slot.destroy();
+        slot.laid = true;
+        this.laidCount++;
+
+        const key = `${slot.row}-${slot.index}`;
+        this.pulseTweens.get(key)?.destroy();
+        this.pulseTweens.delete(key);
+
+        slot.rect.destroy();
 
         const colour = NAMED_COLOURS[this.chosenColour];
         const darker = Phaser.Display.Color.IntegerToColor(colour).darken(35).color;
 
-        const brick = this.add.rectangle(this.slotX(col), this.brickY(row), BRICK_W - 8, BRICK_H - 8, colour);
+        const brick = this.add.rectangle(slot.x, this.brickY(slot.row), slot.width - 8, BRICK_H - 8, colour);
         brick.setStrokeStyle(4, darker);
         brick.setScale(0);
         this.tweens.add({ targets: brick, scaleX: 1, scaleY: 1, duration: 140, ease: 'Back.Out' });
 
         this.bricks.push(brick);
-        this.laidInRow++;
 
-        if (this.laidInRow === BRICK_COLS)
+        //  This may have just freed up bricks in the row above
+        for (const above of this.brickSlots)
         {
-            this.activeRow++;
-            this.laidInRow = 0;
+            if (above.row === slot.row + 1 && !above.laid && !this.pulseTweens.has(`${above.row}-${above.index}`) && this.isSupported(above))
+            {
+                this.unlockSlot(above);
+            }
+        }
 
-            if (this.activeRow === BRICK_ROWS)
-            {
-                this.rowPulse?.destroy();
-                this.decorate();
-            }
-            else
-            {
-                this.highlightRow();
-            }
+        if (this.laidCount === this.totalPieces)
+        {
+            this.decorate();
         }
     }
 
