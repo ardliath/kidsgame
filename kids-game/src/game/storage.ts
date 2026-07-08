@@ -6,6 +6,7 @@ const DEMOLISHED_KEY = 'kids-game-demolished';
 const VISITED_KEY = 'kids-game-visited';
 const MAP_KEY = 'kids-game-map';
 const INTERIORS_KEY = 'kids-game-interiors';
+const NAME_KEY = 'kids-game-name';
 
 export interface SaveData
 {
@@ -223,6 +224,31 @@ export function saveVisitedHouse (houseId: string)
             visited.push(houseId);
             localStorage.setItem(VISITED_KEY, JSON.stringify(visited));
         }
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
+//  The player's name, so the people in the houses can greet him properly
+export function loadPlayerName (): string
+{
+    try
+    {
+        return localStorage.getItem(NAME_KEY) ?? '';
+    }
+    catch
+    {
+        return '';
+    }
+}
+
+export function savePlayerName (name: string)
+{
+    try
+    {
+        localStorage.setItem(NAME_KEY, name);
     }
     catch
     {

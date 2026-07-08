@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { InteriorPerson, InteriorSpec, loadInteriors, saveInterior, saveVisitedHouse } from '../storage';
+import { InteriorPerson, InteriorSpec, loadInteriors, loadPlayerName, saveInterior, saveVisitedHouse } from '../storage';
 
 //  The house cross-section: one floor shown at a time
 const WALL_TOP = 262;
@@ -10,7 +10,9 @@ const FLOOR_Y = 790;
 const SKINS = [ 0xffcc80, 0xd7a97c, 0x8d5524, 0xffe0b2 ];
 const HAIRS = [ 0x4e342e, 0xfbc02d, 0xd84315, 0x212121, 0x9e9e9e ];
 const SHIRTS = [ 0xe53935, 0xfb8c00, 0x43a047, 0x1e88e5, 0x8e24aa, 0x26a69a ];
-const GREETINGS = [ 'Hello!', 'Hi there!', 'Welcome!', 'Nice to see you!', 'Come on in!', 'Lovely day!' ];
+//  {name} is swapped for the player's name when the bubble is shown, so a
+//  name change reaches every house — even ones generated long ago
+const GREETINGS = [ 'Hello, {name}!', 'Hi, {name}!', 'Welcome, {name}!', 'Nice to see you, {name}!', 'Come on in, {name}!', 'Lovely day, {name}!' ];
 const WALL_TINTS = [ 0xfff3e0, 0xe3f2fd, 0xf3e5f5, 0xe8f5e9, 0xfffde7, 0xfce4ec ];
 
 interface Room
@@ -482,8 +484,14 @@ export class Interior extends Scene
 
         this.tweens.add({ targets: body, y: FLOOR_Y - 5, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
 
-        //  Speech bubble, shown when the player walks up
-        const text = this.add.text(0, 0, person.greeting, {
+        //  Speech bubble, shown when the player walks up. Older houses have
+        //  greetings without {name} in them; those pass through untouched.
+        const name = loadPlayerName().trim();
+        const greeting = name.length > 0
+            ? person.greeting.replace('{name}', name)
+            : person.greeting.replace(', {name}', '');
+
+        const text = this.add.text(0, 0, greeting, {
             fontFamily: 'Arial Black', fontSize: 22, color: '#263238'
         }).setOrigin(0.5);
 
