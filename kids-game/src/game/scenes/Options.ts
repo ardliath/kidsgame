@@ -70,7 +70,7 @@ export class Options extends Scene
 
         CAR_MODELS.forEach((model, i) => {
 
-            const x = CX - 150 + i * 150;
+            const x = CX - 225 + i * 150;
 
             const slot = this.add.rectangle(x, 655, 120, 135, 0x37474f);
             this.modelSlots.set(model.key, slot);

@@ -3,7 +3,7 @@ import { Scene } from 'phaser';
 import { buildCarShapes, DEFAULT_COLOUR, DEFAULT_MODEL } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedSite, TILE } from '../mapBuilder';
-import { loadCarStyle, SaveData } from '../storage';
+import { loadCarStyle, loadCurrentMap, saveCurrentMap, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 interface EntryState
@@ -72,8 +72,16 @@ export class Driving extends Scene
         //  Extra pointers so the wheel, pedal and gear stick work at the same time
         this.input.addPointer(3);
 
-        const mapId = this.sceneData.mapId ?? DEFAULT_MAP;
+        //  Fresh boots resume in the town he was last driving in
+        let mapId = this.sceneData.mapId ?? loadCurrentMap() ?? DEFAULT_MAP;
+
+        if (!this.cache.json.get(mapCacheKey(mapId)))
+        {
+            mapId = DEFAULT_MAP;
+        }
+
         this.registry.set('mapId', mapId);
+        saveCurrentMap(mapId);
         this.map = this.cache.json.get(mapCacheKey(mapId)) as MapData;
 
         const built = buildMap(this, this.map);

@@ -25,10 +25,12 @@
         { "col": 5, "row": 2, "facing": "east", "colour": "red", "model": "hatch" },
         { "col": 8, "row": 4, "facing": "south", "colour": "teal", "model": "truck" },
         { "col": 3, "row": 9, "facing": "north", "colour": "orange", "model": "racer" },
-        { "col": 6, "row": 8, "facing": "west", "colour": "purple", "model": "hatch" }
+        { "col": 6, "row": 8, "facing": "west", "colour": "purple", "model": "hatch" },
+        { "col": 7, "row": 2, "facing": "east", "colour": "blue", "model": "lorry" }
     ],
     "exits": {
         "west": "home-town",
         "south": "cove-town"
-    }
+    },
+    "start": { "col": 3, "row": 6 }
 }

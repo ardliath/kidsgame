@@ -13,7 +13,8 @@ export const CAR_COLOURS = [
 export const CAR_MODELS = [
     { key: 'hatch', name: 'Car' },
     { key: 'racer', name: 'Racer' },
-    { key: 'truck', name: 'Truck' }
+    { key: 'truck', name: 'Truck' },
+    { key: 'lorry', name: 'Lorry' }
 ];
 
 export const DEFAULT_COLOUR = 0xe53935;
@@ -29,6 +30,7 @@ export function buildCarShapes (scene: Scene, model: string, colour: number): Ph
     {
         case 'racer': return racerShapes(scene, colour, dark);
         case 'truck': return truckShapes(scene, colour, dark);
+        case 'lorry': return lorryShapes(scene, colour, dark);
         default: return hatchShapes(scene, colour, dark);
     }
 }
@@ -62,6 +64,24 @@ function racerShapes (scene: Scene, colour: number, dark: number): Phaser.GameOb
         scene.add.rectangle(0, 40, 52, 10, dark),
         scene.add.circle(-10, -34, 4, 0xfff176),
         scene.add.circle(10, -34, 4, 0xfff176)
+    ];
+}
+
+function lorryShapes (scene: Scene, colour: number, dark: number): Phaser.GameObjects.GameObject[]
+{
+    return [
+        ...wheels(scene, [ [ -23, -36 ], [ 23, -36 ], [ -23, 6 ], [ 23, 6 ], [ -23, 40 ], [ 23, 40 ] ], 12, 22),
+
+        //  Cab up front in the body colour
+        scene.add.rectangle(0, -39, 46, 26, colour).setStrokeStyle(4, dark),
+        scene.add.rectangle(0, -43, 38, 8, 0xb3e5fc),
+        scene.add.circle(-14, -50, 4, 0xfff176),
+        scene.add.circle(14, -50, 4, 0xfff176),
+
+        //  Big box trailer with a stripe to match
+        scene.add.rectangle(0, 15, 50, 74, 0xe0e0e0).setStrokeStyle(4, 0x757575),
+        scene.add.rectangle(0, -6, 50, 14, colour),
+        scene.add.rectangle(0, 49, 42, 6, 0x757575)
     ];
 }
 

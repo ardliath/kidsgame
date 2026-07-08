@@ -5,6 +5,9 @@ import { loadBuiltHouses, loadDemolished, loadExtraSites, loadVisitedHouses, sav
 
 export const TILE = 200;
 
+//  Every map keeps at least this many plots available to build on
+const MIN_SITES = 3;
+
 export const MAP_IDS = [ 'home-town', 'hill-town', 'beach-town', 'cove-town' ];
 export const DEFAULT_MAP = 'home-town';
 
@@ -218,7 +221,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
-    //  ---- Keep at least two plots available to build on ----
+    //  ---- Keep enough plots available to build on ----
     //  Prefer empty grass (never sand or water); as a last resort, demolish
     //  a house the player hasn't visited and didn't build himself.
 
@@ -265,7 +268,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     let available = siteSpecs.filter(s => !builtHouses[s.id]).length;
     let guard = 0;
 
-    while (available < 2 && guard++ < 8)
+    while (available < MIN_SITES && guard++ < 10)
     {
         const cell = pickEmptyGrass();
 
@@ -496,8 +499,9 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         parked.setRotation(facingRotation[facing]);
 
         //  Static bodies stay axis-aligned, so size the box to the parked orientation
+        const length = car.model === 'lorry' ? 108 : 88;
         const horizontal = facing === 'east' || facing === 'west';
-        parked.setSize(horizontal ? 88 : 56, horizontal ? 56 : 88);
+        parked.setSize(horizontal ? length : 56, horizontal ? 56 : length);
 
         scene.physics.add.existing(parked, true);
         obstacles.add(parked);

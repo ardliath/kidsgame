@@ -4,6 +4,7 @@ const BUILT_KEY = 'kids-game-built';
 const EXTRA_SITES_KEY = 'kids-game-extra-sites';
 const DEMOLISHED_KEY = 'kids-game-demolished';
 const VISITED_KEY = 'kids-game-visited';
+const MAP_KEY = 'kids-game-map';
 
 export interface SaveData
 {
@@ -168,6 +169,32 @@ export function saveDemolished (ids: string[])
     catch
     {
         //  Ignore
+    }
+}
+
+//  The town the player was last driving in, so reopening the game
+//  puts him back there
+export function saveCurrentMap (mapId: string)
+{
+    try
+    {
+        localStorage.setItem(MAP_KEY, mapId);
+    }
+    catch
+    {
+        //  Ignore: he'll just start back in the home town
+    }
+}
+
+export function loadCurrentMap (): string | null
+{
+    try
+    {
+        return localStorage.getItem(MAP_KEY);
+    }
+    catch
+    {
+        return null;
     }
 }
 
