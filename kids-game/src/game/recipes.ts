@@ -3,12 +3,18 @@ import { Scene } from 'phaser';
 import { parseColour } from './mapBuilder';
 
 //  Everything cookable is defined in public/assets/recipes.json — add new
-//  ingredients and recipes there, no code needed. A recipe picks one of the
-//  three cooking methods: 'toaster' (tap the lever), 'hob' (stir the pan)
-//  or 'pour' (hold to fill the glass).
+//  ingredients and recipes there, no code needed. A recipe is a list of
+//  steps the child does in order:
 //
+//    { "type": "fetch", "ingredient": "bread" }   find it in the fridge
+//    { "type": "pour",  "ingredient": "water", "into": "pan" }  hold to pour
+//    { "type": "add",   "ingredient": "pasta" }   tap to tip into the pan
+//    { "type": "stir",  "stirs": 5 }              stir the pan
+//    { "type": "toast" }                          push the toaster lever
+//
+//  Each step may carry an "instruction" string shown at the top.
 //  Icons available for ingredients/results: bread, toast, pasta, carton,
-//  bowl, glass. Anything else draws as a plain blob in the given colour.
+//  jug, bowl, glass. Anything else draws as a plain blob in the given colour.
 
 export interface IngredientDef
 {
@@ -17,14 +23,55 @@ export interface IngredientDef
     icon: string;
 }
 
+export type CookStepType = 'fetch' | 'pour' | 'add' | 'stir' | 'toast';
+
+export interface CookStep
+{
+    type: CookStepType;
+    ingredient?: string;
+    into?: 'pan' | 'glass';
+    stirs?: number;
+    instruction?: string;
+}
+
 export interface RecipeDef
 {
     id: string;
     name: string;
-    ingredients: string[];
-    method: 'toaster' | 'hob' | 'pour';
-    stirs?: number;
     result: { colour: string; icon: string };
+    steps?: CookStep[];
+
+    //  Legacy single-method form, still supported
+    ingredients?: string[];
+    method?: 'toaster' | 'hob' | 'pour';
+    stirs?: number;
+}
+
+//  Every recipe becomes a list of steps. New recipes use "steps"; older
+//  single-method recipes are expanded here so nothing breaks.
+export function recipeSteps (recipe: RecipeDef): CookStep[]
+{
+    if (recipe.steps && recipe.steps.length > 0)
+    {
+        return recipe.steps;
+    }
+
+    const steps: CookStep[] = (recipe.ingredients ?? []).map(id => ({ type: 'fetch', ingredient: id } as CookStep));
+
+    if (recipe.method === 'toaster')
+    {
+        steps.push({ type: 'toast' });
+    }
+    else if (recipe.method === 'hob')
+    {
+        steps.push({ type: 'stir', stirs: recipe.stirs });
+    }
+    else if (recipe.method === 'pour')
+    {
+        steps.push({ type: 'pour', ingredient: recipe.ingredients?.[0], into: 'glass' });
+    }
+
+    return steps;
 }
 
 export interface RecipeConfig
@@ -81,6 +128,14 @@ export function drawFoodIcon (scene: Scene, icon: string, colourName: string): P
             return [
                 scene.add.rectangle(0, 4, 36, 48, 0xe3f2fd, 0.45).setStrokeStyle(3, 0x90caf9),
                 scene.add.rectangle(0, 12, 30, 30, colour)
+            ];
+
+        case 'jug':
+            return [
+                scene.add.rectangle(-26, 2, 8, 34, dark),
+                scene.add.rectangle(0, 6, 42, 50, colour, 0.5).setStrokeStyle(3, dark),
+                scene.add.rectangle(0, 13, 34, 34, colour),
+                scene.add.triangle(24, -10, 0, 0, 0, 20, 16, 6, colour)
             ];
 
         default:

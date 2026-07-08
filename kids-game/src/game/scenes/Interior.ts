@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
+import { RecipeDef } from '../recipes';
 import { InteriorPerson, InteriorSpec, loadInteriors, loadPlayerName, saveInterior, saveVisitedHouse } from '../storage';
 
 //  The house cross-section: one floor shown at a time
@@ -281,6 +282,49 @@ export class Interior extends Scene
     {
         this.scene.launch('Cooking', { houseId: this.houseId });
         this.scene.pause();
+    }
+
+    //  Called when the player finishes cooking: anyone in the kitchen thanks him
+    onCooked (recipe: RecipeDef)
+    {
+        const kitchen = this.roomsForFloor(this.floorIndex).find(r => r.type === 'kitchen');
+
+        if (!kitchen)
+        {
+            return;
+        }
+
+        const name = loadPlayerName().trim();
+        const food = recipe.name.toLowerCase();
+        const text = name.length > 0 ? `Thank you ${name} for the ${food}!` : `Thank you for the ${food}!`;
+
+        for (const person of this.spec.people)
+        {
+            if (person.floor === this.floorIndex && person.x >= kitchen.x0 && person.x <= kitchen.x1)
+            {
+                this.showThankYou(person.x, text);
+            }
+        }
+    }
+
+    showThankYou (x: number, text: string)
+    {
+        const label = this.add.text(0, 0, text, {
+            fontFamily: 'Arial Black', fontSize: 22, color: '#5d4037'
+        }).setOrigin(0.5);
+
+        const bg = this.add.rectangle(0, 0, label.width + 40, 50, 0xfff9c4).setStrokeStyle(4, 0x5d4037);
+        const tail = this.add.triangle(-10, 32, 0, 0, 24, 0, 12, 16, 0xfff9c4);
+
+        const bubbleX = Phaser.Math.Clamp(x, 200, GAME_WIDTH - 200);
+        const bubble = this.add.container(bubbleX, FLOOR_Y - 220, [ bg, tail, label ]);
+        bubble.setAlpha(0).setDepth(30);
+        this.floorLayer.add(bubble);
+
+        this.tweens.add({ targets: bubble, alpha: 1, y: FLOOR_Y - 240, duration: 220 });
+        this.time.delayedCall(3400, () => {
+            this.tweens.add({ targets: bubble, alpha: 0, duration: 400, onComplete: () => bubble.destroy() });
+        });
     }
 
     drawLiving (room: Room)

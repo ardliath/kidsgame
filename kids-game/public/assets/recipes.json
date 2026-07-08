@@ -2,30 +2,38 @@
     "ingredients": {
         "bread": { "name": "Bread", "colour": "#e0b070", "icon": "bread" },
         "pasta": { "name": "Pasta", "colour": "#ffd54f", "icon": "pasta" },
-        "apple-juice": { "name": "Apple juice", "colour": "#9ccc65", "icon": "carton" }
+        "apple-juice": { "name": "Apple juice", "colour": "#9ccc65", "icon": "carton" },
+        "water": { "name": "Water", "colour": "#4fc3f7", "icon": "jug" }
     },
     "recipes": [
         {
             "id": "toast",
             "name": "Toast",
-            "ingredients": [ "bread" ],
-            "method": "toaster",
-            "result": { "colour": "#c68642", "icon": "toast" }
+            "result": { "colour": "#c68642", "icon": "toast" },
+            "steps": [
+                { "type": "fetch", "ingredient": "bread", "instruction": "Find the bread!" },
+                { "type": "toast", "instruction": "Push the lever!" }
+            ]
         },
         {
             "id": "pasta",
             "name": "Pasta",
-            "ingredients": [ "pasta" ],
-            "method": "hob",
-            "stirs": 5,
-            "result": { "colour": "#ffca28", "icon": "bowl" }
+            "result": { "colour": "#ffca28", "icon": "bowl" },
+            "steps": [
+                { "type": "fetch", "ingredient": "pasta", "instruction": "Find the pasta!" },
+                { "type": "pour", "ingredient": "water", "into": "pan", "instruction": "Pour in the water!" },
+                { "type": "add", "ingredient": "pasta", "instruction": "Add the pasta!" },
+                { "type": "stir", "stirs": 5, "instruction": "Now give it a stir!" }
+            ]
         },
         {
             "id": "apple-juice",
             "name": "Apple juice",
-            "ingredients": [ "apple-juice" ],
-            "method": "pour",
-            "result": { "colour": "#aed581", "icon": "glass" }
+            "result": { "colour": "#aed581", "icon": "glass" },
+            "steps": [
+                { "type": "fetch", "ingredient": "apple-juice", "instruction": "Find the apple juice!" },
+                { "type": "pour", "ingredient": "apple-juice", "into": "glass", "instruction": "Hold the carton to pour!" }
+            ]
         }
     ]
 }

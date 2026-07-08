@@ -1,34 +1,49 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { drawFoodIcon, foodColour, RecipeConfig, RecipeDef } from '../recipes';
+import { CookStep, drawFoodIcon, foodColour, RecipeConfig, RecipeDef, recipeSteps } from '../recipes';
+import { Interior } from './Interior';
 
 const CX = GAME_WIDTH / 2;
 const COUNTER_Y = 700;
 const GLASS_FULL = 120;
+const WATER_COLOUR = 0x4fc3f7;
+const PALE_FOOD = 0xfff3c4;
 
 export class Cooking extends Scene
 {
     config: RecipeConfig;
     recipe: RecipeDef | null = null;
+    steps: CookStep[] = [];
+    stepIndex = 0;
 
-    phaseLayer: Phaser.GameObjects.Container;
+    //  surfaceLayer holds the pan and its contents, kept across the steps of
+    //  one recipe; stepLayer is the transient UI for the current step
+    surfaceLayer: Phaser.GameObjects.Container;
+    stepLayer: Phaser.GameObjects.Container;
     instruction: Phaser.GameObjects.Text;
+    busy = false;
+    lastFetched = '';
 
-    fetched: Set<string> = new Set();
-    trackers: Map<string, Phaser.GameObjects.Container> = new Map();
-
-    stirsLeft = 0;
+    //  Pan, created lazily the first time a step needs it
+    panCreated = false;
+    panX = CX;
+    panY = COUNTER_Y - 60;
     panContents: Phaser.GameObjects.Ellipse | null = null;
-    spoon: Phaser.GameObjects.Rectangle | null = null;
 
+    //  Pour step
+    pourActive = false;
+    pourTarget: 'pan' | 'glass' = 'glass';
+    pourProgress = 0;
     pouringPointer = -1;
-    pourLevel = 0;
-    liquid: Phaser.GameObjects.Rectangle | null = null;
     carton: Phaser.GameObjects.Container | null = null;
     stream: Phaser.GameObjects.Rectangle | null = null;
+    liquid: Phaser.GameObjects.Rectangle | null = null;
 
-    busy = false;
+    //  Stir step
+    stirsLeft = 0;
+    stirFrom = PALE_FOOD;
+    spoon: Phaser.GameObjects.Rectangle | null = null;
 
     constructor ()
     {
@@ -39,10 +54,6 @@ export class Cooking extends Scene
     {
         this.config = this.cache.json.get('recipes') as RecipeConfig;
         this.recipe = null;
-        this.fetched = new Set();
-        this.trackers = new Map();
-        this.pouringPointer = -1;
-        this.pourLevel = 0;
         this.busy = false;
 
         //  A warm little kitchen backdrop
@@ -56,6 +67,9 @@ export class Cooking extends Scene
 
         this.add.rectangle(CX, COUNTER_Y + 60, GAME_WIDTH, 130, 0xa1887f).setStrokeStyle(6, 0x795548);
         this.add.rectangle(CX, COUNTER_Y, GAME_WIDTH, 18, 0xd7ccc8);
+
+        this.surfaceLayer = this.add.container(0, 0);
+        this.stepLayer = this.add.container(0, 0);
 
         this.instruction = this.add.text(CX, 90, '', {
             fontFamily: 'Arial Black', fontSize: 44, color: '#5d4037',
@@ -81,26 +95,32 @@ export class Cooking extends Scene
         this.showChoose();
     }
 
-    newPhaseLayer ()
+    newStepLayer ()
     {
-        this.phaseLayer?.destroy(true);
-        this.phaseLayer = this.add.container(0, 0);
+        this.stepLayer.destroy(true);
+        this.stepLayer = this.add.container(0, 0);
+        this.pourActive = false;
+        this.pouringPointer = -1;
+        this.carton = null;
+        this.stream = null;
+        this.liquid = null;
+        this.spoon = null;
     }
 
     foodIcon (icon: string, colour: string, x: number, y: number, scale = 1): Phaser.GameObjects.Container
     {
         const container = this.add.container(x, y, drawFoodIcon(this, icon, colour));
         container.setScale(scale);
-        this.phaseLayer.add(container);
+        this.stepLayer.add(container);
 
         return container;
     }
 
-    //  ---- Phase 1: pick a recipe ----
+    //  ---- Choose a recipe ----
 
     showChoose ()
     {
-        this.newPhaseLayer();
+        this.newStepLayer();
         this.instruction.setText('What shall we make?');
 
         const recipes = this.config.recipes;
@@ -110,95 +130,142 @@ export class Cooking extends Scene
             const x = CX + (i - (recipes.length - 1) / 2) * 300;
             const y = 450;
 
-            const card = this.add.rectangle(x, y, 250, 300, 0x455a64).setStrokeStyle(6, 0x263238);
-            this.phaseLayer.add(card);
+            this.stepLayer.add(this.add.rectangle(x, y, 250, 300, 0x455a64).setStrokeStyle(6, 0x263238));
 
             this.foodIcon(recipe.result.icon, recipe.result.colour, x, y - 60, 2);
 
-            const label = this.add.text(x, y + 90, recipe.name, {
+            this.stepLayer.add(this.add.text(x, y + 90, recipe.name, {
                 fontFamily: 'Arial Black', fontSize: 26, color: '#ffffff'
-            }).setOrigin(0.5);
-            this.phaseLayer.add(label);
+            }).setOrigin(0.5));
 
             const zone = this.add.zone(x, y, 260, 310).setInteractive();
-            zone.on('pointerdown', () => this.startFetch(recipe));
-            this.phaseLayer.add(zone);
+            zone.on('pointerdown', () => this.startRecipe(recipe));
+            this.stepLayer.add(zone);
 
         });
     }
 
-    //  ---- Phase 2: find the ingredients in the fridge ----
-
-    startFetch (recipe: RecipeDef)
+    startRecipe (recipe: RecipeDef)
     {
         this.recipe = recipe;
-        this.fetched = new Set();
-        this.trackers = new Map();
-        this.newPhaseLayer();
+        this.steps = recipeSteps(recipe);
+        this.stepIndex = -1;
+        this.busy = false;
+        this.lastFetched = '';
 
-        const firstIngredient = this.config.ingredients[recipe.ingredients[0]];
-        this.instruction.setText(`Find the ${firstIngredient?.name.toLowerCase() ?? 'food'}!`);
+        //  Fresh cooking surface for this recipe
+        this.panCreated = false;
+        this.panContents = null;
+        this.surfaceLayer.destroy(true);
+        this.surfaceLayer = this.add.container(0, 0);
 
-        //  What we need, shown dimmed until found
-        const needed = recipe.ingredients;
+        //  Keep the step UI above the surface
+        this.children.bringToTop(this.stepLayer);
 
-        needed.forEach((id, i) => {
+        this.nextStep();
+    }
 
-            const def = this.config.ingredients[id];
-            const x = CX + (i - (needed.length - 1) / 2) * 110;
+    nextStep ()
+    {
+        this.stepIndex++;
 
-            const tracker = this.add.container(x, 190);
-            tracker.add(this.add.circle(0, 0, 44, 0xffffff, 0.6).setStrokeStyle(4, 0xbcaaa4));
-            tracker.add(this.add.container(0, 0, drawFoodIcon(this, def?.icon ?? '', def?.colour ?? '#ffca28')));
-            tracker.setAlpha(0.4);
-            this.phaseLayer.add(tracker);
-            this.trackers.set(id, tracker);
+        if (this.stepIndex >= this.steps.length)
+        {
+            this.finish();
 
-        });
+            return;
+        }
 
-        //  The fridge, door open, shelves stocked with everything we know about
-        this.phaseLayer.add(this.add.rectangle(330, 470, 340, 470, 0xeceff1).setStrokeStyle(6, 0x90a4ae));
-        this.phaseLayer.add(this.add.rectangle(132, 470, 56, 470, 0xcfd8dc).setStrokeStyle(5, 0x90a4ae));
+        this.runStep(this.steps[this.stepIndex]);
+    }
+
+    runStep (step: CookStep)
+    {
+        this.newStepLayer();
+        this.instruction.setText(step.instruction ?? '');
+
+        switch (step.type)
+        {
+            case 'fetch': this.setupFetch(step); break;
+            case 'pour': this.setupPour(step); break;
+            case 'add': this.setupAdd(step); break;
+            case 'stir': this.setupStir(step); break;
+            case 'toast': this.setupToaster(step); break;
+        }
+    }
+
+    ensurePan ()
+    {
+        if (this.panCreated)
+        {
+            return;
+        }
+
+        this.panCreated = true;
+
+        const x = this.panX;
+        const y = this.panY;
+
+        this.surfaceLayer.add(this.add.rectangle(x, COUNTER_Y - 12, 320, 14, 0x455a64));
+        this.surfaceLayer.add(this.add.ellipse(x, y + 26, 240, 26, 0x263238));
+        this.surfaceLayer.add(this.add.rectangle(x + 175, y - 10, 110, 16, 0x455a64));
+        this.surfaceLayer.add(this.add.ellipse(x, y, 230, 60, 0x37474f).setStrokeStyle(5, 0x263238));
+
+        //  Contents start invisible: an empty pan
+        this.panContents = this.add.ellipse(x, y - 6, 190, 36, WATER_COLOUR).setAlpha(0);
+        this.surfaceLayer.add(this.panContents);
+    }
+
+    //  ---- fetch: find it in the fridge ----
+
+    setupFetch (step: CookStep)
+    {
+        const def = this.config.ingredients[step.ingredient ?? ''];
+
+        //  What we're after, shown at the top
+        const tracker = this.add.container(CX, 190);
+        tracker.add(this.add.circle(0, 0, 46, 0xffffff, 0.6).setStrokeStyle(4, 0xbcaaa4));
+        tracker.add(this.add.container(0, 0, drawFoodIcon(this, def?.icon ?? '', def?.colour ?? '#ffca28')));
+        this.stepLayer.add(tracker);
+
+        //  The fridge, door open, shelves stocked
+        this.stepLayer.add(this.add.rectangle(330, 470, 340, 470, 0xeceff1).setStrokeStyle(6, 0x90a4ae));
+        this.stepLayer.add(this.add.rectangle(132, 470, 56, 470, 0xcfd8dc).setStrokeStyle(5, 0x90a4ae));
 
         const shelfYs = [ 350, 470, 590 ];
 
         for (const y of shelfYs)
         {
-            this.phaseLayer.add(this.add.rectangle(330, y + 42, 320, 8, 0xb0bec5));
+            this.stepLayer.add(this.add.rectangle(330, y + 42, 320, 8, 0xb0bec5));
         }
 
-        //  Required items plus decoys, spread over the shelves
+        //  The wanted item plus decoys
         const allIds = Object.keys(this.config.ingredients);
-        const decoys = allIds.filter(id => !needed.includes(id));
-        const stock = [ ...needed, ...decoys ].slice(0, 6);
+        const decoys = allIds.filter(id => id !== step.ingredient);
+        const stock = [ step.ingredient ?? '', ...Phaser.Utils.Array.Shuffle(decoys) ].slice(0, 6);
 
         Phaser.Utils.Array.Shuffle(stock);
 
         stock.forEach((id, i) => {
 
-            const def = this.config.ingredients[id];
+            const idef = this.config.ingredients[id];
             const x = 240 + (i % 2) * 180;
             const y = shelfYs[Math.floor(i / 2)];
 
-            const item = this.add.container(x, y, drawFoodIcon(this, def?.icon ?? '', def?.colour ?? '#ffca28'));
+            const item = this.add.container(x, y, drawFoodIcon(this, idef?.icon ?? '', idef?.colour ?? '#ffca28'));
             item.setScale(1.4);
-            this.phaseLayer.add(item);
+            this.stepLayer.add(item);
 
             const zone = this.add.zone(x, y, 100, 100).setInteractive();
-            zone.on('pointerdown', () => this.fetchItem(id, item, zone));
-            this.phaseLayer.add(zone);
+            zone.on('pointerdown', () => this.fetchItem(step.ingredient ?? '', id, item, zone, tracker));
+            this.stepLayer.add(zone);
 
         });
     }
 
-    fetchItem (id: string, item: Phaser.GameObjects.Container, zone: Phaser.GameObjects.Zone)
+    fetchItem (want: string, got: string, item: Phaser.GameObjects.Container, zone: Phaser.GameObjects.Zone, tracker: Phaser.GameObjects.Container)
     {
-        if (!this.recipe)
-        {
-            return;
-        }
-
-        if (!this.recipe.ingredients.includes(id) || this.fetched.has(id))
+        if (got !== want)
         {
             //  Not what we need: wiggle and stay put
             this.tweens.add({ targets: item, x: item.x + 10, duration: 60, yoyo: true, repeat: 2 });
@@ -206,83 +273,216 @@ export class Cooking extends Scene
             return;
         }
 
-        this.fetched.add(id);
+        this.lastFetched = got;
         zone.destroy();
 
-        //  Fly to the counter
-        this.tweens.add({
-            targets: item,
-            x: 850 + this.fetched.size * 90,
-            y: COUNTER_Y - 50,
-            scale: 1.2,
-            duration: 400,
-            ease: 'Back.In'
-        });
+        this.tweens.add({ targets: item, x: 900, y: COUNTER_Y - 50, scale: 1.2, duration: 400, ease: 'Back.In' });
 
-        const tracker = this.trackers.get(id);
+        tracker.add(this.add.text(32, -32, '✓', { fontFamily: 'Arial Black', fontSize: 32, color: '#2e7d32' }).setOrigin(0.5));
 
-        if (tracker)
+        this.time.delayedCall(500, () => this.nextStep());
+    }
+
+    //  ---- pour: hold to fill a glass, or fill the pan with water ----
+
+    setupPour (step: CookStep)
+    {
+        const def = this.config.ingredients[step.ingredient ?? ''];
+        const colour = foodColour(def?.colour);
+
+        this.pourActive = true;
+        this.pourProgress = 0;
+        this.pourTarget = step.into ?? 'glass';
+        this.pouringPointer = -1;
+
+        if (this.pourTarget === 'glass')
         {
-            tracker.setAlpha(1);
-            tracker.add(this.add.text(30, -30, '✓', { fontFamily: 'Arial Black', fontSize: 30, color: '#2e7d32' }).setOrigin(0.5));
+            const glassX = CX + 90;
+            const glassBottom = COUNTER_Y - 14;
+
+            this.stepLayer.add(this.add.rectangle(glassX, glassBottom - 70, 110, 140, 0xe3f2fd, 0.4).setStrokeStyle(5, 0x90caf9));
+
+            this.liquid = this.add.rectangle(glassX, glassBottom - 6, 96, GLASS_FULL, colour).setOrigin(0.5, 1).setScale(1, 0.01);
+            this.stepLayer.add(this.liquid);
+
+            this.stream = this.add.rectangle(glassX - 24, glassBottom - 200, 14, 130, colour).setOrigin(0.5, 0).setVisible(false);
+            this.stepLayer.add(this.stream);
+
+            this.carton = this.add.container(CX - 110, COUNTER_Y - 290, drawFoodIcon(this, def?.icon ?? 'carton', def?.colour ?? '#9ccc65'));
+            this.carton.setScale(2.4);
+            this.stepLayer.add(this.carton);
+
+            const zone = this.add.zone(CX - 110, COUNTER_Y - 290, 170, 190).setInteractive();
+            zone.on('pointerdown', (pointer: Phaser.Input.Pointer) => { this.pouringPointer = pointer.id; });
+            this.stepLayer.add(zone);
         }
-
-        if (this.fetched.size === this.recipe.ingredients.length)
+        else
         {
-            this.time.delayedCall(600, () => this.startCook());
+            this.ensurePan();
+
+            if (this.panContents)
+            {
+                this.panContents.setFillStyle(colour).setAlpha(0);
+            }
+
+            const jugX = this.panX - 150;
+            const jugY = this.panY - 210;
+
+            this.carton = this.add.container(jugX, jugY, drawFoodIcon(this, def?.icon ?? 'jug', def?.colour ?? '#4fc3f7'));
+            this.carton.setScale(2.2);
+            this.stepLayer.add(this.carton);
+
+            this.stream = this.add.rectangle(this.panX - 10, jugY + 40, 14, this.panY - (jugY + 40) - 6, colour).setOrigin(0.5, 0).setVisible(false);
+            this.stepLayer.add(this.stream);
+
+            const zone = this.add.zone(jugX, jugY, 180, 200).setInteractive();
+            zone.on('pointerdown', (pointer: Phaser.Input.Pointer) => { this.pouringPointer = pointer.id; });
+            this.stepLayer.add(zone);
         }
     }
 
-    //  ---- Phase 3: cook it ----
+    //  ---- add: tap an ingredient to tip it into the pan ----
 
-    startCook ()
+    setupAdd (step: CookStep)
     {
-        if (!this.recipe)
+        this.ensurePan();
+
+        const def = this.config.ingredients[step.ingredient ?? ''];
+
+        const icon = this.add.container(this.panX, this.panY - 200, drawFoodIcon(this, def?.icon ?? '', def?.colour ?? '#ffca28'));
+        icon.setScale(1.8);
+        this.stepLayer.add(icon);
+
+        const zone = this.add.zone(this.panX, this.panY - 200, 140, 140).setInteractive();
+        this.stepLayer.add(zone);
+
+        zone.on('pointerdown', () => {
+
+            if (this.busy)
+            {
+                return;
+            }
+
+            this.busy = true;
+            zone.destroy();
+
+            this.tweens.add({
+                targets: icon,
+                y: this.panY - 6,
+                scale: 0.5,
+                alpha: 0,
+                duration: 450,
+                ease: 'Quad.In',
+                onComplete: () => {
+
+                    this.busy = false;
+
+                    if (this.panContents)
+                    {
+                        this.panContents.setFillStyle(PALE_FOOD).setAlpha(1);
+                    }
+
+                    //  A few bits bobbing in the pan
+                    for (let i = 0; i < 4; i++)
+                    {
+                        const bit = this.add.rectangle(this.panX - 60 + i * 40, this.panY - 6, 20, 8, foodColour(def?.colour));
+                        this.surfaceLayer.add(bit);
+                    }
+
+                    this.instruction.setText('In it goes!');
+                    this.time.delayedCall(500, () => this.nextStep());
+
+                }
+            });
+
+        });
+    }
+
+    //  ---- stir: stir the pan a number of times ----
+
+    setupStir (step: CookStep)
+    {
+        this.ensurePan();
+
+        this.stirsLeft = step.stirs ?? 5;
+        this.stirFrom = this.panContents ? this.panContents.fillColor : PALE_FOOD;
+        this.instruction.setText(`Stir it ${this.stirsLeft} times!`);
+
+        this.spoon = this.add.rectangle(this.panX + 40, this.panY - 70, 14, 110, 0x8d6e63).setStrokeStyle(3, 0x5d4037);
+        this.stepLayer.add(this.spoon);
+
+        const zone = this.add.zone(this.panX, this.panY - 30, 280, 160).setInteractive();
+        this.stepLayer.add(zone);
+
+        zone.on('pointerdown', () => this.stir(zone));
+    }
+
+    stir (zone: Phaser.GameObjects.Zone)
+    {
+        if (this.stirsLeft <= 0 || !this.spoon || !this.panContents)
         {
             return;
         }
 
-        this.newPhaseLayer();
+        this.stirsLeft--;
 
-        switch (this.recipe.method)
+        this.tweens.add({ targets: this.spoon, x: this.panX - 40, duration: 160, yoyo: true });
+        this.tweens.add({ targets: this.spoon, rotation: -0.35, duration: 160, yoyo: true });
+
+        for (let i = 0; i < 2; i++)
         {
-            case 'toaster': this.setupToaster(); break;
-            case 'hob': this.setupHob(); break;
-            case 'pour': this.setupPour(); break;
+            const puff = this.add.circle(this.panX - 40 + Math.random() * 80, this.panY - 50, 12 + Math.random() * 8, 0xffffff, 0.75);
+            this.surfaceLayer.add(puff);
+            this.tweens.add({ targets: puff, y: puff.y - 90, alpha: 0, duration: 700, onComplete: () => puff.destroy() });
+        }
+
+        const total = this.steps[this.stepIndex].stirs ?? 5;
+        const progress = (total - this.stirsLeft) / total;
+        const from = Phaser.Display.Color.IntegerToColor(this.stirFrom);
+        const to = Phaser.Display.Color.IntegerToColor(foodColour(this.recipe!.result.colour));
+        const mixed = Phaser.Display.Color.Interpolate.ColorWithColor(from, to, 100, Math.round(progress * 100));
+
+        this.panContents.setFillStyle(Phaser.Display.Color.GetColor(mixed.r, mixed.g, mixed.b));
+
+        if (this.stirsLeft > 0)
+        {
+            this.instruction.setText(`Stir it ${this.stirsLeft} more!`);
+        }
+        else
+        {
+            zone.destroy();
+            this.instruction.setText('Smells great!');
+            this.time.delayedCall(800, () => this.nextStep());
         }
     }
 
-    setupToaster ()
-    {
-        this.instruction.setText('Push the lever!');
+    //  ---- toast: push the lever ----
 
+    setupToaster (_step: CookStep)
+    {
         const x = CX;
         const y = COUNTER_Y - 80;
 
-        //  Bread peeking out of the slots
-        const ingredient = this.config.ingredients[this.recipe!.ingredients[0]];
-        const breadColour = foodColour(ingredient?.colour);
+        const ingredient = this.config.ingredients[this.lastFetched];
+        const breadColour = foodColour(ingredient?.colour ?? '#e0b070');
 
         const slices = [
             this.add.rectangle(x - 45, y - 80, 60, 50, breadColour).setStrokeStyle(3, 0xb08a50),
             this.add.rectangle(x + 45, y - 80, 60, 50, breadColour).setStrokeStyle(3, 0xb08a50)
         ];
-        slices.forEach(s => this.phaseLayer.add(s));
+        slices.forEach(s => this.stepLayer.add(s));
 
-        //  The toaster
         const body = this.add.rectangle(x, y, 260, 160, 0xb0bec5).setStrokeStyle(6, 0x78909c);
-        this.phaseLayer.add(body);
-        this.phaseLayer.add(this.add.rectangle(x - 45, y - 72, 70, 16, 0x455a64));
-        this.phaseLayer.add(this.add.rectangle(x + 45, y - 72, 70, 16, 0x455a64));
-        this.phaseLayer.add(this.add.circle(x - 95, y + 45, 10, 0x8d6e63));
+        this.stepLayer.add(body);
+        this.stepLayer.add(this.add.rectangle(x - 45, y - 72, 70, 16, 0x455a64));
+        this.stepLayer.add(this.add.rectangle(x + 45, y - 72, 70, 16, 0x455a64));
 
-        //  Lever
         const lever = this.add.rectangle(x + 155, y - 40, 36, 26, 0xef5350).setStrokeStyle(4, 0x8e0000);
-        this.phaseLayer.add(this.add.rectangle(x + 145, y, 10, 110, 0x78909c));
-        this.phaseLayer.add(lever);
+        this.stepLayer.add(this.add.rectangle(x + 145, y, 10, 110, 0x78909c));
+        this.stepLayer.add(lever);
 
         const zone = this.add.zone(x + 150, y - 20, 110, 130).setInteractive();
-        this.phaseLayer.add(zone);
+        this.stepLayer.add(zone);
 
         zone.on('pointerdown', () => {
 
@@ -312,121 +512,18 @@ export class Cooking extends Scene
                     fontFamily: 'Arial Black', fontSize: 40, color: '#fb8c00',
                     stroke: '#ffffff', strokeThickness: 8
                 }).setOrigin(0.5).setScale(0);
-                this.phaseLayer.add(ding);
+                this.stepLayer.add(ding);
                 this.tweens.add({ targets: ding, scale: 1, duration: 250, ease: 'Back.Out' });
 
-                this.time.delayedCall(900, () => this.finish());
+                this.busy = false;
+                this.time.delayedCall(900, () => this.nextStep());
 
             });
 
         });
     }
 
-    setupHob ()
-    {
-        this.stirsLeft = this.recipe!.stirs ?? 5;
-        this.instruction.setText(`Stir it ${this.stirsLeft} times!`);
-
-        const x = CX;
-        const y = COUNTER_Y - 60;
-
-        //  Cooker ring and pan
-        this.phaseLayer.add(this.add.rectangle(x, COUNTER_Y - 12, 320, 14, 0x455a64));
-        this.phaseLayer.add(this.add.ellipse(x, y + 26, 240, 26, 0x263238));
-
-        this.phaseLayer.add(this.add.rectangle(x + 175, y - 10, 110, 16, 0x455a64));
-        this.phaseLayer.add(this.add.ellipse(x, y, 230, 60, 0x37474f).setStrokeStyle(5, 0x263238));
-
-        this.panContents = this.add.ellipse(x, y - 6, 190, 36, 0xfff3c4);
-        this.phaseLayer.add(this.panContents);
-
-        this.spoon = this.add.rectangle(x + 40, y - 70, 14, 110, 0x8d6e63).setStrokeStyle(3, 0x5d4037);
-        this.phaseLayer.add(this.spoon);
-
-        const zone = this.add.zone(x, y - 30, 280, 160).setInteractive();
-        this.phaseLayer.add(zone);
-
-        zone.on('pointerdown', () => this.stir(x, y, zone));
-    }
-
-    stir (x: number, y: number, zone: Phaser.GameObjects.Zone)
-    {
-        if (this.stirsLeft <= 0 || !this.spoon || !this.panContents)
-        {
-            return;
-        }
-
-        this.stirsLeft--;
-
-        //  Swish the spoon and puff some steam
-        this.tweens.add({ targets: this.spoon, x: x - 40, duration: 160, yoyo: true });
-        this.tweens.add({ targets: this.spoon, rotation: -0.35, duration: 160, yoyo: true });
-
-        for (let i = 0; i < 2; i++)
-        {
-            const puff = this.add.circle(x - 40 + Math.random() * 80, y - 50, 12 + Math.random() * 8, 0xffffff, 0.75);
-            this.phaseLayer.add(puff);
-            this.tweens.add({ targets: puff, y: puff.y - 90, alpha: 0, duration: 700, onComplete: () => puff.destroy() });
-        }
-
-        //  Contents cook towards the finished colour
-        const total = this.recipe!.stirs ?? 5;
-        const progress = (total - this.stirsLeft) / total;
-        const from = Phaser.Display.Color.IntegerToColor(0xfff3c4);
-        const to = Phaser.Display.Color.IntegerToColor(foodColour(this.recipe!.result.colour));
-        const mixed = Phaser.Display.Color.Interpolate.ColorWithColor(from, to, 100, Math.round(progress * 100));
-
-        this.panContents.setFillStyle(Phaser.Display.Color.GetColor(mixed.r, mixed.g, mixed.b));
-
-        if (this.stirsLeft > 0)
-        {
-            this.instruction.setText(`Stir it ${this.stirsLeft} more!`);
-        }
-        else
-        {
-            zone.destroy();
-            this.instruction.setText('Smells great!');
-            this.time.delayedCall(800, () => this.finish());
-        }
-    }
-
-    setupPour ()
-    {
-        this.instruction.setText('Hold the carton to pour!');
-        this.pourLevel = 0;
-
-        const glassX = CX + 90;
-        const glassBottom = COUNTER_Y - 14;
-
-        //  The glass
-        this.phaseLayer.add(this.add.rectangle(glassX, glassBottom - 70, 110, 140, 0xe3f2fd, 0.4).setStrokeStyle(5, 0x90caf9));
-
-        this.liquid = this.add.rectangle(glassX, glassBottom - 6, 96, GLASS_FULL, foodColour(this.recipe!.result.colour));
-        this.liquid.setOrigin(0.5, 1);
-        this.liquid.setScale(1, 0.01);
-        this.phaseLayer.add(this.liquid);
-
-        //  Pouring stream, hidden until he holds the carton
-        this.stream = this.add.rectangle(glassX - 24, glassBottom - 200, 14, 130, foodColour(this.recipe!.result.colour));
-        this.stream.setOrigin(0.5, 0);
-        this.stream.setVisible(false);
-        this.phaseLayer.add(this.stream);
-
-        //  The carton, held above and to the left
-        const ingredient = this.config.ingredients[this.recipe!.ingredients[0]];
-        this.carton = this.add.container(CX - 110, COUNTER_Y - 290, drawFoodIcon(this, ingredient?.icon ?? 'carton', ingredient?.colour ?? '#9ccc65'));
-        this.carton.setScale(2.4);
-        this.phaseLayer.add(this.carton);
-
-        const zone = this.add.zone(CX - 110, COUNTER_Y - 290, 170, 190).setInteractive();
-        this.phaseLayer.add(zone);
-
-        zone.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-            this.pouringPointer = pointer.id;
-        });
-    }
-
-    //  ---- Phase 4: ta-da ----
+    //  ---- ta-da ----
 
     finish ()
     {
@@ -437,19 +534,20 @@ export class Cooking extends Scene
 
         const recipe = this.recipe;
 
-        this.newPhaseLayer();
+        this.newStepLayer();
         this.busy = false;
+        this.pourActive = false;
 
         this.instruction.setText(`You made ${recipe.name.toLowerCase()}!`);
 
-        this.phaseLayer.add(this.add.ellipse(CX, 560, 300, 60, 0xffffff).setStrokeStyle(5, 0xb0bec5));
+        this.stepLayer.add(this.add.ellipse(CX, 560, 300, 60, 0xffffff).setStrokeStyle(5, 0xb0bec5));
         this.foodIcon(recipe.result.icon, recipe.result.colour, CX, 480, 3);
 
         for (let i = 0; i < 8; i++)
         {
             const angle = (i / 8) * Math.PI * 2;
             const star = this.add.circle(CX, 470, 9, [ 0xffeb3b, 0xff7043, 0x4dd0e1, 0xaed581 ][i % 4]);
-            this.phaseLayer.add(star);
+            this.stepLayer.add(star);
 
             this.tweens.add({
                 targets: star,
@@ -466,14 +564,22 @@ export class Cooking extends Scene
 
     close ()
     {
+        const interior = this.scene.get('Interior') as Interior;
+
         this.scene.resume('Interior');
+
+        //  A resident in the kitchen thanks the chef by name
+        if (this.recipe)
+        {
+            interior.onCooked(this.recipe);
+        }
+
         this.scene.stop();
     }
 
     update (_time: number, delta: number)
     {
-        //  Pouring: hold to fill, let go to stop
-        if (!this.liquid || !this.carton || !this.stream || this.pourLevel >= GLASS_FULL)
+        if (!this.pourActive || !this.carton || !this.stream)
         {
             return;
         }
@@ -483,19 +589,31 @@ export class Cooking extends Scene
         this.carton.rotation = Phaser.Math.Linear(this.carton.rotation, pouring ? -0.5 : 0, 0.2);
         this.stream.setVisible(pouring);
 
-        if (pouring)
+        if (!pouring || this.pourProgress >= 1)
         {
-            this.pourLevel = Math.min(this.pourLevel + (delta / 1000) * 75, GLASS_FULL);
-            this.liquid.setScale(1, Math.max(this.pourLevel / GLASS_FULL, 0.01));
+            return;
+        }
 
-            if (this.pourLevel >= GLASS_FULL)
-            {
-                this.stream.setVisible(false);
-                this.carton.rotation = 0;
-                this.pouringPointer = -1;
-                this.instruction.setText('Perfect!');
-                this.time.delayedCall(700, () => this.finish());
-            }
+        const rate = this.pourTarget === 'glass' ? 0.42 : 0.55;
+        this.pourProgress = Math.min(1, this.pourProgress + (delta / 1000) * rate);
+
+        if (this.pourTarget === 'glass' && this.liquid)
+        {
+            this.liquid.setScale(1, Math.max(this.pourProgress, 0.01));
+        }
+        else if (this.panContents)
+        {
+            this.panContents.setAlpha(this.pourProgress);
+        }
+
+        if (this.pourProgress >= 1)
+        {
+            this.pourActive = false;
+            this.pouringPointer = -1;
+            this.stream.setVisible(false);
+            this.carton.rotation = 0;
+            this.instruction.setText(this.pourTarget === 'glass' ? 'Perfect!' : 'In it goes!');
+            this.time.delayedCall(600, () => this.nextStep());
         }
     }
 }
