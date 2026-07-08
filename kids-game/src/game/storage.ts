@@ -5,6 +5,7 @@ const EXTRA_SITES_KEY = 'kids-game-extra-sites';
 const DEMOLISHED_KEY = 'kids-game-demolished';
 const VISITED_KEY = 'kids-game-visited';
 const MAP_KEY = 'kids-game-map';
+const INTERIORS_KEY = 'kids-game-interiors';
 
 export interface SaveData
 {
@@ -198,8 +199,7 @@ export function loadCurrentMap (): string | null
     }
 }
 
-//  Houses the player has been inside. Nothing writes this yet — the visit
-//  feature will — but demolition already respects it.
+//  Houses the player has been inside. Demolition never touches these.
 export function loadVisitedHouses (): string[]
 {
     try
@@ -209,5 +209,71 @@ export function loadVisitedHouses (): string[]
     catch
     {
         return [];
+    }
+}
+
+export function saveVisitedHouse (houseId: string)
+{
+    try
+    {
+        const visited = loadVisitedHouses();
+
+        if (!visited.includes(houseId))
+        {
+            visited.push(houseId);
+            localStorage.setItem(VISITED_KEY, JSON.stringify(visited));
+        }
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
+//  The inside of each house, generated the first time it's visited and
+//  kept forever after. Versioned so future features (cooking!) can extend it.
+export interface InteriorPerson
+{
+    floor: number;
+    x: number;
+    skin: number;
+    hair: number;
+    shirt: number;
+    greeting: string;
+}
+
+export interface InteriorSpec
+{
+    version: 1;
+    ground: string[];
+    upstairs: string[];
+    tints: Record<string, number>;
+    variants: Record<string, number>;
+    people: InteriorPerson[];
+}
+
+export function loadInteriors (): Record<string, InteriorSpec>
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(INTERIORS_KEY) ?? '{}') as Record<string, InteriorSpec>;
+    }
+    catch
+    {
+        return {};
+    }
+}
+
+export function saveInterior (houseId: string, spec: InteriorSpec)
+{
+    try
+    {
+        const all = loadInteriors();
+        all[houseId] = spec;
+        localStorage.setItem(INTERIORS_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  The house will still work this session, it just won't be remembered
     }
 }

@@ -21,6 +21,12 @@ interface EntryState
     speed: number;
 }
 
+//  What the pop-up bubble beside the car offers: building on a plot,
+//  or visiting a house
+type ActionTarget =
+    { kind: 'build'; site: PlacedSite } |
+    { kind: 'visit'; house: PlacedHouse };
+
 interface DrivingData
 {
     mapId?: string;
@@ -40,8 +46,10 @@ export class Driving extends Scene
     houses: PlacedHouse[] = [];
     sites: PlacedSite[] = [];
 
-    buildBubble: Phaser.GameObjects.Container;
-    bubbleTarget: PlacedSite | null = null;
+    actionBubble: Phaser.GameObjects.Container;
+    bubbleBg: Phaser.GameObjects.Rectangle;
+    bubbleLabel: Phaser.GameObjects.Text;
+    bubbleTarget: ActionTarget | null = null;
     transitioning = false;
     sceneData: DrivingData = {};
 
@@ -130,13 +138,13 @@ export class Driving extends Scene
 
         this.tweens.add({ targets: label, alpha: 0, delay: 1500, duration: 500 });
 
-        this.createBuildBubble();
+        this.createActionBubble();
 
         this.input.keyboard?.on('keydown-ENTER', () => {
 
             if (this.bubbleTarget)
             {
-                this.openBuilder(this.bubbleTarget);
+                this.openAction(this.bubbleTarget);
             }
 
         });
@@ -147,69 +155,112 @@ export class Driving extends Scene
         }
     }
 
-    createBuildBubble ()
+    createActionBubble ()
     {
-        const bg = this.add.rectangle(0, 0, 170, 56, 0xffeb3b);
-        bg.setStrokeStyle(5, 0x795548);
+        this.bubbleBg = this.add.rectangle(0, 0, 170, 56, 0xffeb3b);
+        this.bubbleBg.setStrokeStyle(5, 0x795548);
 
-        const label = this.add.text(0, 0, 'BUILD', {
+        this.bubbleLabel = this.add.text(0, 0, 'BUILD', {
             fontFamily: 'Arial Black', fontSize: 28, color: '#5d4037'
         }).setOrigin(0.5);
 
-        this.buildBubble = this.add.container(0, 0, [ bg, label ]);
-        this.buildBubble.setDepth(100);
-        this.buildBubble.setVisible(false);
+        this.actionBubble = this.add.container(0, 0, [ this.bubbleBg, this.bubbleLabel ]);
+        this.actionBubble.setDepth(100);
+        this.actionBubble.setVisible(false);
 
-        bg.setInteractive().on('pointerdown', () => {
+        this.bubbleBg.setInteractive().on('pointerdown', () => {
 
             if (this.bubbleTarget)
             {
-                this.openBuilder(this.bubbleTarget);
+                this.openAction(this.bubbleTarget);
             }
 
         });
     }
 
-    updateBuildBubble (time: number)
+    updateActionBubble (time: number)
     {
-        let best: PlacedSite | null = null;
-        let bestDistance = 120;
+        const candidates: { distance: number; target: ActionTarget }[] = [];
+
+        const consider = (x: number, y: number, w: number, h: number, target: ActionTarget) => {
+
+            const dx = Math.max(Math.abs(this.car.x - x) - w / 2, 0);
+            const dy = Math.max(Math.abs(this.car.y - y) - h / 2, 0);
+
+            candidates.push({ distance: Math.hypot(dx, dy), target });
+        };
 
         for (const site of this.sites)
         {
-            const dx = Math.max(Math.abs(this.car.x - site.x) - site.width / 2, 0);
-            const dy = Math.max(Math.abs(this.car.y - site.y) - site.height / 2, 0);
-            const distance = Math.hypot(dx, dy);
+            consider(site.x, site.y, site.width, site.height, { kind: 'build', site });
+        }
 
-            if (distance < bestDistance)
+        for (const house of this.houses)
+        {
+            //  Houses can be visited; shops (signed buildings) can't yet
+            if (!house.sign)
             {
-                best = site;
-                bestDistance = distance;
+                consider(house.x, house.y, house.width, house.height, { kind: 'visit', house });
             }
         }
 
-        //  Only offer the site when the car has more or less stopped beside it
+        let best: ActionTarget | null = null;
+        let bestDistance = 120;
+
+        for (const candidate of candidates)
+        {
+            if (candidate.distance < bestDistance)
+            {
+                best = candidate.target;
+                bestDistance = candidate.distance;
+            }
+        }
+
+        //  Only offer it when the car has more or less stopped alongside
         const slow = Math.abs(this.speed) < 60;
 
         this.bubbleTarget = slow && !this.transitioning ? best : null;
 
         if (this.bubbleTarget)
         {
-            this.buildBubble.setVisible(true);
-            this.buildBubble.setPosition(this.bubbleTarget.x, this.bubbleTarget.y - this.bubbleTarget.height / 2 - 46 + Math.sin(time / 280) * 5);
+            const at = this.bubbleTarget.kind === 'build' ? this.bubbleTarget.site : this.bubbleTarget.house;
+
+            if (this.bubbleTarget.kind === 'build')
+            {
+                this.bubbleBg.setFillStyle(0xffeb3b);
+                this.bubbleBg.setStrokeStyle(5, 0x795548);
+                this.bubbleLabel.setText('BUILD').setColor('#5d4037');
+            }
+            else
+            {
+                this.bubbleBg.setFillStyle(0xe1f5fe);
+                this.bubbleBg.setStrokeStyle(5, 0x0277bd);
+                this.bubbleLabel.setText('VISIT').setColor('#01579b');
+            }
+
+            this.actionBubble.setVisible(true);
+            this.actionBubble.setPosition(at.x, at.y - at.height / 2 - 46 + Math.sin(time / 280) * 5);
         }
         else
         {
-            this.buildBubble.setVisible(false);
+            this.actionBubble.setVisible(false);
         }
     }
 
-    openBuilder (site: PlacedSite)
+    openAction (target: ActionTarget)
     {
         const dashboard = this.scene.get('Dashboard') as Dashboard;
         dashboard.releaseControls();
 
-        this.scene.launch('Builder', { siteId: site.id });
+        if (target.kind === 'build')
+        {
+            this.scene.launch('Builder', { siteId: target.site.id });
+        }
+        else
+        {
+            this.scene.launch('Interior', { houseId: target.house.id, colour: target.house.colour });
+        }
+
         this.scene.pause('Dashboard');
         this.scene.pause();
     }
@@ -325,7 +376,7 @@ export class Driving extends Scene
             return;
         }
 
-        this.updateBuildBubble(time);
+        this.updateActionBubble(time);
 
         const dt = delta / 1000;
 
