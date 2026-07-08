@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
+import { buildCarShapes } from './carShapes';
 
 export const TILE = 200;
 
@@ -36,6 +37,17 @@ export interface MapObject
     sign?: string;
 }
 
+//  Parked cars: obstacles the player weaves around, drawn with the same
+//  builder as the player's own car
+export interface CarPlacement
+{
+    col: number;
+    row: number;
+    colour?: string;
+    model?: string;
+    facing?: Edge;
+}
+
 export interface MapData
 {
     id: string;
@@ -43,6 +55,7 @@ export interface MapData
     tiles: string[];
     legend?: Record<string, LegendEntry>;
     objects?: MapObject[];
+    cars?: CarPlacement[];
     exits?: Partial<Record<Edge, string>>;
     start?: { col: number; row: number };
 }
@@ -55,6 +68,7 @@ export interface PlacedHouse
     width: number;
     height: number;
     colour: number;
+    sign?: string;
 }
 
 export interface BuiltMap
@@ -183,7 +197,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
         solid(rect);
 
-        houses.push({ id, x: hx, y: hy, width: hw, height: hh, colour });
+        houses.push({ id, x: hx, y: hy, width: hw, height: hh, colour, sign });
     };
 
     for (let r = 0; r < rows; r++)
@@ -280,6 +294,33 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         {
             placeHouse(obj.id ?? `${map.id}-object-${index}`, obj.col, obj.row, obj.w ?? 1, obj.h ?? 1, obj.colour, obj.facing, obj.sign);
         }
+
+    });
+
+    //  Parked cars scattered along the roads, as obstacles to steer around
+    const facingRotation: Record<Edge, number> = {
+        north: 0,
+        south: Math.PI,
+        east: Math.PI / 2,
+        west: -Math.PI / 2
+    };
+
+    map.cars?.forEach(car => {
+
+        const cx = (car.col + 0.5) * TILE;
+        const cy = (car.row + 0.5) * TILE;
+        const facing = car.facing ?? 'north';
+        const colour = parseColour(car.colour, 0xbdbdbd);
+
+        const parked = scene.add.container(cx, cy, buildCarShapes(scene, car.model ?? 'hatch', colour));
+        parked.setRotation(facingRotation[facing]);
+
+        //  Static bodies stay axis-aligned, so size the box to the parked orientation
+        const horizontal = facing === 'east' || facing === 'west';
+        parked.setSize(horizontal ? 88 : 56, horizontal ? 56 : 88);
+
+        scene.physics.add.existing(parked, true);
+        obstacles.add(parked);
 
     });
 

@@ -27,6 +27,12 @@
             "facing": "south"
         }
     ],
+    "cars": [
+        { "col": 4, "row": 3, "facing": "east", "colour": "blue", "model": "hatch" },
+        { "col": 7, "row": 3, "facing": "west", "colour": "purple", "model": "truck" },
+        { "col": 2, "row": 6, "facing": "north", "colour": "yellow", "model": "racer" },
+        { "col": 9, "row": 7, "facing": "south", "colour": "green", "model": "hatch" }
+    ],
     "exits": {
         "east": "hill-town",
         "south": "beach-town"
