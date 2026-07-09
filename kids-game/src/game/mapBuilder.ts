@@ -93,6 +93,17 @@ export interface PlacedSite
     height: number;
 }
 
+//  A car that drives itself around the roads once the scene is running.
+//  col/row is its starting tile; heading is which way it's initially facing
+//  (see the CarPlacement.facing it came from).
+export interface PlacedNpcCar
+{
+    container: Phaser.GameObjects.Container;
+    col: number;
+    row: number;
+    heading: number;
+}
+
 export interface BuiltMap
 {
     obstacles: Phaser.Physics.Arcade.StaticGroup;
@@ -101,6 +112,7 @@ export interface BuiltMap
     start: { x: number; y: number };
     houses: PlacedHouse[];
     sites: PlacedSite[];
+    npcCars: PlacedNpcCar[];
 }
 
 const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
@@ -487,13 +499,18 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
-    //  Parked cars scattered along the roads, as obstacles to steer around
+    //  Cars scattered along the roads. They drive themselves once the scene
+    //  is running (see Driving.ts) — here we just draw them and hand back a
+    //  dynamic (movable) body each, sized as a circle like the player's own
+    //  car since they need to freely turn through all four headings.
     const facingRotation: Record<Edge, number> = {
         north: 0,
         south: Math.PI,
         east: Math.PI / 2,
         west: -Math.PI / 2
     };
+
+    const npcCars: PlacedNpcCar[] = [];
 
     map.cars?.forEach(car => {
 
@@ -502,17 +519,14 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         const facing = car.facing ?? 'north';
         const colour = parseColour(car.colour, 0xbdbdbd);
 
-        const parked = scene.add.container(cx, cy, buildCarShapes(scene, car.model ?? 'hatch', colour));
-        parked.setRotation(facingRotation[facing]);
+        const npc = scene.add.container(cx, cy, buildCarShapes(scene, car.model ?? 'hatch', colour));
+        const heading = facingRotation[facing];
+        npc.setRotation(heading);
 
-        //  Static bodies stay axis-aligned, so size the box to the parked orientation
-        const LONG_MODELS: Record<string, number> = { lorry: 108, mixer: 108, digger: 140 };
-        const length = LONG_MODELS[car.model ?? ''] ?? 88;
-        const horizontal = facing === 'east' || facing === 'west';
-        parked.setSize(horizontal ? length : 56, horizontal ? 56 : length);
+        scene.physics.add.existing(npc);
+        (npc.body as Phaser.Physics.Arcade.Body).setCircle(34);
 
-        scene.physics.add.existing(parked, true);
-        obstacles.add(parked);
+        npcCars.push({ container: npc, col: car.col, row: car.row, heading });
 
     });
 
@@ -522,7 +536,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
         : { x: width / 2, y: height / 2 };
 
-    return { obstacles, width, height, start, houses, sites };
+    return { obstacles, width, height, start, houses, sites, npcCars };
 }
 
 //  Invisible walls along each map edge, with openings only where a road

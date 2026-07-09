@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes, DEFAULT_COLOUR, DEFAULT_MODEL } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
-import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedSite, TILE } from '../mapBuilder';
+import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedNpcCar, PlacedSite, TILE } from '../mapBuilder';
 import { loadCarStyle, loadCoins, loadCurrentMap, saveCurrentMap, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
@@ -12,6 +12,26 @@ import { Dashboard } from './Dashboard';
 //  corner feels — keep that above ~half a tile or it starts to spin in place.
 const GRIP_SPEED = 130;
 const MAX_TURN_RATE = 1.1;
+
+//  NPC traffic: a gentle constant speed, and the four directions they can
+//  choose between at each tile centre
+const NPC_SPEED = 80;
+
+const NPC_DIRS: { dx: number; dy: number; heading: number }[] = [
+    { dx: 0, dy: -1, heading: 0 },
+    { dx: 1, dy: 0, heading: Math.PI / 2 },
+    { dx: 0, dy: 1, heading: Math.PI },
+    { dx: -1, dy: 0, heading: -Math.PI / 2 }
+];
+
+interface NpcCarState
+{
+    container: Phaser.GameObjects.Container;
+    heading: number;
+    targetX: number;
+    targetY: number;
+    stuckTime: number;
+}
 
 interface EntryState
 {
@@ -46,6 +66,8 @@ export class Driving extends Scene
     startPos: { x: number; y: number };
     houses: PlacedHouse[] = [];
     sites: PlacedSite[] = [];
+    npcCars: NpcCarState[] = [];
+    npcGroup: Phaser.Physics.Arcade.Group;
 
     actionBubble: Phaser.GameObjects.Container;
     bubbleBg: Phaser.GameObjects.Rectangle;
@@ -120,6 +142,8 @@ export class Driving extends Scene
         this.car.rotation = this.heading;
 
         this.physics.add.collider(this.car, built.obstacles);
+
+        this.setupNpcCars(built.npcCars, built.obstacles);
 
         //  Repaint the car when the options screen changes it
         this.registry.events.on('changedata-carColour', this.restyleCar, this);
@@ -342,6 +366,95 @@ export class Driving extends Scene
         this.car.add(buildCarShapes(this, this.registry.get('carModel') as string, this.registry.get('carColour') as number));
     }
 
+    //  ---- NPC traffic: cars that drive themselves along the road tiles ----
+
+    setupNpcCars (placed: PlacedNpcCar[], obstacles: Phaser.Physics.Arcade.StaticGroup)
+    {
+        this.npcCars = [];
+        this.npcGroup = this.physics.add.group();
+
+        for (const npc of placed)
+        {
+            this.npcGroup.add(npc.container);
+
+            const state: NpcCarState = {
+                container: npc.container,
+                heading: npc.heading,
+                targetX: (npc.col + 0.5) * TILE,
+                targetY: (npc.row + 0.5) * TILE,
+                stuckTime: 0
+            };
+
+            //  Work out its first real destination tile from its starting spot
+            this.pickNextNpcTarget(state);
+
+            this.npcCars.push(state);
+        }
+
+        this.physics.add.collider(this.car, this.npcGroup);
+        this.physics.add.collider(this.npcGroup, obstacles);
+    }
+
+    isRoadTile (col: number, row: number): boolean
+    {
+        return row >= 0 && row < this.map.tiles.length && col >= 0 && col < this.map.tiles[0].length
+            && this.map.tiles[row][col] === 'R';
+    }
+
+    //  Chooses where an NPC drives to next, from the tile it's just reached.
+    //  Never reverses unless that's the only way forward (a dead end).
+    pickNextNpcTarget (npc: NpcCarState)
+    {
+        const col = Math.round(npc.targetX / TILE - 0.5);
+        const row = Math.round(npc.targetY / TILE - 0.5);
+
+        const reverseHeading = Phaser.Math.Angle.Wrap(npc.heading + Math.PI);
+        const valid = NPC_DIRS.filter(d => this.isRoadTile(col + d.dx, row + d.dy));
+        const notReversing = valid.filter(d => Math.abs(Phaser.Math.Angle.Wrap(d.heading - reverseHeading)) > 0.1);
+
+        const pool = notReversing.length > 0 ? notReversing : valid;
+        const choice = pool.length > 0 ? Phaser.Utils.Array.GetRandom(pool) : null;
+
+        if (choice)
+        {
+            npc.heading = choice.heading;
+            npc.targetX = (col + choice.dx + 0.5) * TILE;
+            npc.targetY = (row + choice.dy + 0.5) * TILE;
+        }
+        else
+        {
+            //  Nowhere valid to go (shouldn't happen on a well-formed map) —
+            //  just keep going the way it was facing rather than freeze
+            npc.targetX += Math.sin(npc.heading) * TILE;
+            npc.targetY -= Math.cos(npc.heading) * TILE;
+        }
+
+        npc.stuckTime = 0;
+    }
+
+    updateNpcCars (dt: number)
+    {
+        for (const npc of this.npcCars)
+        {
+            const body = npc.container.body as Phaser.Physics.Arcade.Body;
+
+            body.setVelocity(Math.sin(npc.heading) * NPC_SPEED, -Math.cos(npc.heading) * NPC_SPEED);
+            npc.container.rotation = npc.heading;
+
+            const distance = Phaser.Math.Distance.Between(npc.container.x, npc.container.y, npc.targetX, npc.targetY);
+
+            //  A stuck timer covers the rare case another car or the player
+            //  blocks it from ever quite reaching its target tile
+            npc.stuckTime += dt;
+
+            if (distance < 6 || npc.stuckTime > 5)
+            {
+                body.reset(npc.targetX, npc.targetY);
+                this.pickNextNpcTarget(npc);
+            }
+        }
+    }
+
     resetCar ()
     {
         if (this.registry.get('mapId') !== DEFAULT_MAP)
@@ -435,6 +548,8 @@ export class Driving extends Scene
         this.updateActionBubble(time);
 
         const dt = delta / 1000;
+
+        this.updateNpcCars(dt);
 
         const steering = (this.registry.get('steering') as number) ?? 0;
         const throttle = (this.registry.get('throttle') as number) ?? 0;
