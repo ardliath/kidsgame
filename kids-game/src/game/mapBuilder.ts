@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
-import { loadBuiltHouses, loadDemolished, loadExtraSites, loadPlayerName, loadVisitedHouses, saveDemolished, saveExtraSite } from './storage';
+import { loadBuiltHouses, loadDemolished, loadExtraSites, loadPlayerName, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraSite, saveExtraSites } from './storage';
 
 export const TILE = 200;
 
@@ -244,8 +244,57 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     });
 
-    //  Sites this map gained in earlier sessions (skip any the JSON has since built over)
-    for (const extra of loadExtraSites()[map.id] ?? [])
+    //  Tiles now covered by something authored in the JSON (houses, shops,
+    //  sites, the yard). Anything the auto-site system saved here in an
+    //  earlier session — including houses the player built on it — is stale
+    //  now that we've placed our own thing on the spot, so purge it.
+    const objectTiles = new Set<string>();
+
+    map.objects?.forEach(obj => {
+
+        const ow = obj.w ?? (obj.type === 'yard' ? 3 : 1);
+        const oh = obj.h ?? (obj.type === 'yard' ? 2 : 1);
+
+        for (let c = obj.col; c < obj.col + ow; c++)
+        {
+            for (let r = obj.row; r < obj.row + oh; r++)
+            {
+                objectTiles.add(`${c},${r}`);
+            }
+        }
+
+    });
+
+    const allExtras = loadExtraSites();
+    const mapExtras = allExtras[map.id] ?? [];
+    const keptExtras = mapExtras.filter(e => !objectTiles.has(`${e.col},${e.row}`));
+
+    if (keptExtras.length !== mapExtras.length)
+    {
+        //  Remove any built house that sat on a now-purged plot, then persist
+        const built = loadBuiltHouses();
+        let builtChanged = false;
+
+        for (const e of mapExtras)
+        {
+            if (objectTiles.has(`${e.col},${e.row}`) && built[e.id])
+            {
+                delete built[e.id];
+                builtChanged = true;
+            }
+        }
+
+        if (builtChanged)
+        {
+            saveBuiltHouses(built);
+        }
+
+        allExtras[map.id] = keptExtras;
+        saveExtraSites(allExtras);
+    }
+
+    //  Sites this map gained in earlier sessions (skip any tile no longer grass)
+    for (const extra of keptExtras)
     {
         if (tileAt(extra.col, extra.row) === '.')
         {

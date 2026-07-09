@@ -174,6 +174,18 @@ export function saveBuiltHouse (siteId: string, colour: string)
     }
 }
 
+export function saveBuiltHouses (all: BuiltHouses)
+{
+    try
+    {
+        localStorage.setItem(BUILT_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
 //  Building sites the game has added on empty grass to keep at least two
 //  plots available per map, keyed by map id
 export interface ExtraSite
@@ -212,6 +224,18 @@ export function saveExtraSite (mapId: string, site: ExtraSite)
     catch
     {
         //  Ignore: the site will simply be re-chosen next time
+    }
+}
+
+export function saveExtraSites (all: Record<string, ExtraSite[]>)
+{
+    try
+    {
+        localStorage.setItem(EXTRA_SITES_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  Ignore
     }
 }
 
