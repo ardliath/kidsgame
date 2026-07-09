@@ -410,14 +410,19 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
             if (facing === 'east') scene.add.rectangle(hx + hw / 2 - 13, hy, 18, 44, veryDark);
         }
 
-        //  Name across the roof of his own home
+        //  Name across the roof of his own home, shrunk to fit the house
         if (player)
         {
             const name = loadPlayerName().trim();
 
-            scene.add.text(hx, hy, name.length > 0 ? `${name}'s` : 'Home', {
-                fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff', stroke: '#000000', strokeThickness: 6
+            const plate = scene.add.text(hx, hy, name.length > 0 ? `${name}'s` : 'Home', {
+                fontFamily: 'Arial Black', fontSize: 26, color: '#ffffff', stroke: '#000000', strokeThickness: 5
             }).setOrigin(0.5);
+
+            if (plate.width > hw - 12)
+            {
+                plate.setScale((hw - 12) / plate.width);
+            }
         }
 
         solid(rect);

@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { drawFoodIcon, RecipeConfig } from '../recipes';
-import { loadBag, loadCoins, loadPlayerName, saveBag, saveCoins } from '../storage';
+import { loadCoins, loadPantry, loadPlayerName, savePantry, saveCoins } from '../storage';
 
 const WALL_TOP = 262;
 const FLOOR_Y = 790;
@@ -268,15 +268,15 @@ export class Shop extends Scene
         saveCoins(coins);
         this.coinCount.setText(String(coins));
 
-        //  Into the shopping bag they go
-        const bag = loadBag();
+        //  Stock his pantry (home fridge) with what he bought
+        const pantry = loadPantry();
 
         for (const id of this.basket)
         {
-            bag[id] = (bag[id] ?? 0) + 1;
+            pantry[id] = (pantry[id] ?? 0) + 1;
         }
 
-        saveBag(bag);
+        savePantry(pantry);
 
         this.basket = [];
         this.refreshBasket();

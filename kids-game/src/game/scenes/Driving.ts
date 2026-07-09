@@ -3,7 +3,7 @@ import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
-import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, saveCurrentMap, saveFleet, SaveData } from '../storage';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, pantryExists, saveCurrentMap, saveFleet, savePantry, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -117,6 +117,25 @@ export class Driving extends Scene
         if (this.registry.get('coins') === undefined)
         {
             this.registry.set('coins', loadCoins());
+        }
+
+        //  Seed his pantry with a small starting stock the very first time,
+        //  so his first cook works without a mandatory shop trip. After that
+        //  it depletes as he cooks and he tops it up by shopping.
+        if (!pantryExists())
+        {
+            const config = this.cache.json.get('recipes') as { ingredients: Record<string, { price?: number }> };
+            const pantry: Record<string, number> = {};
+
+            for (const [ id, def ] of Object.entries(config.ingredients))
+            {
+                if (def.price != null)
+                {
+                    pantry[id] = 2;
+                }
+            }
+
+            savePantry(pantry);
         }
 
         //  Extra pointers so the wheel, pedal and gear stick work at the same time

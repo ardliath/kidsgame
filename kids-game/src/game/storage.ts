@@ -11,7 +11,7 @@ const MAP_KEY = 'kids-game-map';
 const INTERIORS_KEY = 'kids-game-interiors';
 const NAME_KEY = 'kids-game-name';
 const COINS_KEY = 'kids-game-coins';
-const BAG_KEY = 'kids-game-bag';
+const PANTRY_KEY = 'kids-game-pantry';
 
 export interface SaveData
 {
@@ -324,15 +324,31 @@ export function saveCoins (coins: number)
     }
 }
 
-//  The shopping bag rides in the car: groceries bought at a shop, usable
-//  in any kitchen
-export type Bag = Record<string, number>;
+//  The player's pantry — his home fridge. Shopping stocks it, and cooking
+//  (wherever he does it) draws from it. There's only one, his; other
+//  houses don't have their own food.
+export type Pantry = Record<string, number>;
 
-export function loadBag (): Bag
+//  Whether the pantry has ever been set up. Lets a fresh game seed a small
+//  starting stock exactly once (see seedPantryIfNew), while a pantry the
+//  player has since emptied by cooking stays empty until he shops.
+export function pantryExists (): boolean
 {
     try
     {
-        return JSON.parse(localStorage.getItem(BAG_KEY) ?? '{}') as Bag;
+        return localStorage.getItem(PANTRY_KEY) !== null;
+    }
+    catch
+    {
+        return true;
+    }
+}
+
+export function loadPantry (): Pantry
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(PANTRY_KEY) ?? '{}') as Pantry;
     }
     catch
     {
@@ -340,11 +356,11 @@ export function loadBag (): Bag
     }
 }
 
-export function saveBag (bag: Bag)
+export function savePantry (pantry: Pantry)
 {
     try
     {
-        localStorage.setItem(BAG_KEY, JSON.stringify(bag));
+        localStorage.setItem(PANTRY_KEY, JSON.stringify(pantry));
     }
     catch
     {
@@ -397,10 +413,6 @@ export interface InteriorSpec
     tints: Record<string, number>;
     variants: Record<string, number>;
     people: InteriorPerson[];
-
-    //  What's in this house's fridge, by ingredient id. Older specs don't
-    //  have it; the cooking scene fills it in with a starting stock.
-    fridge?: Record<string, number>;
 }
 
 export function loadInteriors (): Record<string, InteriorSpec>

@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { CookStep, drawFoodIcon, foodColour, RecipeConfig, RecipeDef, recipeSteps } from '../recipes';
-import { Bag, InteriorSpec, loadBag, loadInteriors, saveBag, saveInterior } from '../storage';
+import { loadPantry, Pantry, savePantry } from '../storage';
 import { Interior } from './Interior';
 
 const CX = GAME_WIDTH / 2;
@@ -49,12 +49,10 @@ export class Cooking extends Scene
     stirFrom = PALE_FOOD;
     spoon: Phaser.GameObjects.Rectangle | null = null;
 
-    //  This house's fridge stock, plus the shopping bag from the car.
-    //  Fetch steps use fridge first, then bag; empty means a shop trip.
+    //  His pantry (home fridge) — the only food store. Fetch steps draw from
+    //  it wherever he's cooking; empty means a trip to the shop.
     houseId = '';
-    houseSpec: InteriorSpec | null = null;
-    fridge: Record<string, number> = {};
-    bag: Bag = {};
+    pantry: Pantry = {};
 
     constructor ()
     {
@@ -72,36 +70,7 @@ export class Cooking extends Scene
         this.recipe = null;
         this.busy = false;
 
-        //  Older houses have no fridge stock yet: start them with 2 of everything
-        this.houseSpec = loadInteriors()[this.houseId] ?? null;
-        this.bag = loadBag();
-
-        if (this.houseSpec && !this.houseSpec.fridge)
-        {
-            this.houseSpec.fridge = {};
-
-            for (const id of Object.keys(this.config.ingredients))
-            {
-                this.houseSpec.fridge[id] = 2;
-            }
-
-            saveInterior(this.houseId, this.houseSpec);
-        }
-
-        if (this.houseSpec)
-        {
-            this.fridge = this.houseSpec.fridge ?? {};
-        }
-        else
-        {
-            //  No known house (shouldn't happen): don't block cooking
-            this.fridge = {};
-
-            for (const id of Object.keys(this.config.ingredients))
-            {
-                this.fridge[id] = 2;
-            }
-        }
+        this.pantry = loadPantry();
 
         //  A warm little kitchen backdrop
         this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfff8e1);
@@ -303,7 +272,7 @@ export class Cooking extends Scene
             item.setScale(1.4);
             this.stepLayer.add(item);
 
-            //  How many we have: this fridge plus the shopping bag
+            //  How many we have in the pantry
             const count = this.available(id);
 
             if (count > 0)
@@ -328,7 +297,7 @@ export class Cooking extends Scene
 
     available (id: string): number
     {
-        return (this.fridge[id] ?? 0) + (this.bag[id] ?? 0);
+        return this.pantry[id] ?? 0;
     }
 
     fetchItem (want: string, got: string, item: Phaser.GameObjects.Container, zone: Phaser.GameObjects.Zone, tracker: Phaser.GameObjects.Container)
@@ -351,22 +320,9 @@ export class Cooking extends Scene
             return;
         }
 
-        //  Use up the fridge first, then the shopping bag
-        if ((this.fridge[want] ?? 0) > 0)
-        {
-            this.fridge[want] = (this.fridge[want] ?? 0) - 1;
-
-            if (this.houseSpec)
-            {
-                this.houseSpec.fridge = this.fridge;
-                saveInterior(this.houseId, this.houseSpec);
-            }
-        }
-        else
-        {
-            this.bag[want] = Math.max(0, (this.bag[want] ?? 0) - 1);
-            saveBag(this.bag);
-        }
+        //  Use one up from the pantry
+        this.pantry[want] = Math.max(0, (this.pantry[want] ?? 0) - 1);
+        savePantry(this.pantry);
 
         this.lastFetched = got;
         zone.destroy();
