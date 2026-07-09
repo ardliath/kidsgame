@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
-import { loadBuiltHouses, loadDemolished, loadExtraSites, loadVisitedHouses, saveDemolished, saveExtraSite } from './storage';
+import { loadBuiltHouses, loadDemolished, loadExtraSites, loadPlayerName, loadVisitedHouses, saveDemolished, saveExtraSite } from './storage';
 
 export const TILE = 200;
 
@@ -45,6 +45,10 @@ export interface MapObject
     //  cooking ingredients; 'treat' is an eat-it-now shop like ice cream.
     sells?: string[];
     shopType?: 'grocery' | 'treat';
+
+    //  The player's own home: painted his car colour, name over the door,
+    //  and never demolished.
+    player?: boolean;
 }
 
 //  Parked cars: obstacles the player weaves around, drawn with the same
@@ -193,7 +197,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     //  ---- Data pass: decide what stands where before drawing anything ----
 
-    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' }
+    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat'; player?: boolean }
     interface SiteSpec { id: string; col: number; row: number; w: number; h: number }
 
     const builtHouses = loadBuiltHouses();
@@ -227,7 +231,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
         if (obj.type === 'house')
         {
-            houseSpecs.push({ id: obj.id ?? `${map.id}-object-${index}`, col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1, colour: obj.colour, facing: obj.facing, sign: obj.sign, sells: obj.sells, shopType: obj.shopType });
+            houseSpecs.push({ id: obj.id ?? `${map.id}-object-${index}`, col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1, colour: obj.colour, facing: obj.facing, sign: obj.sign, sells: obj.sells, shopType: obj.shopType, player: obj.player });
         }
         else if (obj.type === 'site')
         {
@@ -330,7 +334,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
         else
         {
-            const index = houseSpecs.findIndex(h => !h.sign && !visited.has(h.id) && !builtHouses[h.id]);
+            const index = houseSpecs.findIndex(h => !h.sign && !h.player && !visited.has(h.id) && !builtHouses[h.id]);
 
             if (index === -1)
             {
@@ -350,7 +354,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     //  Shared by plain H tiles, legend characters and map objects.
     //  Every house gets a unique, stable id.
-    const placeHouse = (id: string, col: number, row: number, w: number, h: number, colourName?: string, facing?: Edge, sign?: string, sells?: string[], shopType?: 'grocery' | 'treat') => {
+    const placeHouse = (id: string, col: number, row: number, w: number, h: number, colourName?: string, facing?: Edge, sign?: string, sells?: string[], shopType?: 'grocery' | 'treat', player?: boolean) => {
 
         if (usedIds.has(id))
         {
@@ -365,7 +369,9 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         const hh = h * TILE - 32;
 
         const fallback = HOUSE_COLOURS[(col * 7 + row * 13) % HOUSE_COLOURS.length];
-        const colour = parseColour(colourName, fallback);
+
+        //  The player's own home takes his chosen car colour
+        const colour = player ? ((scene.registry.get('carColour') as number) ?? fallback) : parseColour(colourName, fallback);
         const darker = Phaser.Display.Color.IntegerToColor(colour).darken(35).color;
 
         const rect = scene.add.rectangle(hx, hy, hw, hh, colour);
@@ -380,7 +386,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
                 stroke: '#000000', strokeThickness: 4, align: 'center'
             }).setOrigin(0.5);
         }
-        else
+        else if (!player)
         {
             //  Roof ridge along the long axis
             if (hw >= hh)
@@ -402,6 +408,16 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
             if (facing === 'south') scene.add.rectangle(hx, hy + hh / 2 - 13, 44, 18, veryDark);
             if (facing === 'west') scene.add.rectangle(hx - hw / 2 + 13, hy, 18, 44, veryDark);
             if (facing === 'east') scene.add.rectangle(hx + hw / 2 - 13, hy, 18, 44, veryDark);
+        }
+
+        //  Name across the roof of his own home
+        if (player)
+        {
+            const name = loadPlayerName().trim();
+
+            scene.add.text(hx, hy, name.length > 0 ? `${name}'s` : 'Home', {
+                fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff', stroke: '#000000', strokeThickness: 6
+            }).setOrigin(0.5);
         }
 
         solid(rect);
@@ -510,7 +526,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  Draw everything the data pass decided on
     for (const spec of houseSpecs)
     {
-        placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, spec.colour, spec.facing, spec.sign, spec.sells, spec.shopType);
+        placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, spec.colour, spec.facing, spec.sign, spec.sells, spec.shopType, spec.player);
     }
 
     for (const spec of siteSpecs)
