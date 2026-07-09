@@ -506,7 +506,8 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         parked.setRotation(facingRotation[facing]);
 
         //  Static bodies stay axis-aligned, so size the box to the parked orientation
-        const length = car.model === 'lorry' ? 108 : 88;
+        const LONG_MODELS: Record<string, number> = { lorry: 108, mixer: 108, digger: 140 };
+        const length = LONG_MODELS[car.model ?? ''] ?? 88;
         const horizontal = facing === 'east' || facing === 'west';
         parked.setSize(horizontal ? length : 56, horizontal ? 56 : length);
 

@@ -14,7 +14,10 @@ export const CAR_MODELS = [
     { key: 'hatch', name: 'Car' },
     { key: 'racer', name: 'Racer' },
     { key: 'truck', name: 'Truck' },
-    { key: 'lorry', name: 'Lorry' }
+    { key: 'lorry', name: 'Lorry' },
+    { key: 'forklift', name: 'Forklift' },
+    { key: 'digger', name: 'Digger' },
+    { key: 'mixer', name: 'Mixer' }
 ];
 
 export const DEFAULT_COLOUR = 0xe53935;
@@ -31,6 +34,9 @@ export function buildCarShapes (scene: Scene, model: string, colour: number): Ph
         case 'racer': return racerShapes(scene, colour, dark);
         case 'truck': return truckShapes(scene, colour, dark);
         case 'lorry': return lorryShapes(scene, colour, dark);
+        case 'forklift': return forkliftShapes(scene, colour, dark);
+        case 'digger': return diggerShapes(scene, colour, dark);
+        case 'mixer': return mixerShapes(scene, colour, dark);
         default: return hatchShapes(scene, colour, dark);
     }
 }
@@ -95,5 +101,70 @@ function truckShapes (scene: Scene, colour: number, dark: number): Phaser.GameOb
         scene.add.rectangle(0, 27, 34, 34, 0x9e9e9e),
         scene.add.circle(-14, -38, 5, 0xfff176),
         scene.add.circle(14, -38, 5, 0xfff176)
+    ];
+}
+
+function forkliftShapes (scene: Scene, colour: number, dark: number): Phaser.GameObjects.GameObject[]
+{
+    return [
+        ...wheels(scene, [ [ -20, -8 ], [ 20, -8 ], [ -20, 26 ], [ 20, 26 ] ], 12, 20),
+
+        //  Chassis and cab, sat towards the rear
+        scene.add.rectangle(0, 15, 42, 52, colour).setStrokeStyle(4, dark),
+        scene.add.rectangle(0, 4, 26, 20, 0xb3e5fc),
+        scene.add.rectangle(0, -6, 32, 8, dark),
+
+        //  Mast the forks slide on
+        scene.add.rectangle(-16, -27, 6, 38, 0x757575),
+        scene.add.rectangle(16, -27, 6, 38, 0x757575),
+        scene.add.rectangle(0, -40, 36, 8, 0x616161),
+
+        //  The forks themselves, sticking out the front
+        scene.add.rectangle(-10, -50, 8, 24, 0x9e9e9e),
+        scene.add.rectangle(10, -50, 8, 24, 0x9e9e9e)
+    ];
+}
+
+function diggerShapes (scene: Scene, colour: number, dark: number): Phaser.GameObjects.GameObject[]
+{
+    return [
+        //  Tracks either side, instead of wheels
+        scene.add.rectangle(-24, 8, 16, 80, 0x212121).setStrokeStyle(2, 0x000000),
+        scene.add.rectangle(24, 8, 16, 80, 0x212121).setStrokeStyle(2, 0x000000),
+        scene.add.rectangle(-24, -12, 12, 6, 0x424242),
+        scene.add.rectangle(-24, 28, 12, 6, 0x424242),
+        scene.add.rectangle(24, -12, 12, 6, 0x424242),
+        scene.add.rectangle(24, 28, 12, 6, 0x424242),
+
+        //  Turret body, sat towards the rear so the arm has room to reach forward
+        scene.add.rectangle(0, 14, 46, 56, colour).setStrokeStyle(4, dark),
+        scene.add.rectangle(-10, 0, 20, 18, 0xb3e5fc),
+
+        //  Boom, arm and bucket reaching out the front
+        scene.add.rectangle(0, -32, 16, 46, dark),
+        scene.add.rectangle(0, -64, 12, 34, 0x757575),
+        scene.add.rectangle(0, -85, 24, 16, 0x9e9e9e).setStrokeStyle(3, 0x616161)
+    ];
+}
+
+function mixerShapes (scene: Scene, colour: number, dark: number): Phaser.GameObjects.GameObject[]
+{
+    const stripe = (y: number) => scene.add.rectangle(0, y, 44, 8, dark).setRotation(0.5);
+
+    return [
+        ...wheels(scene, [ [ -23, -30 ], [ 23, -30 ], [ -23, 10 ], [ 23, 10 ], [ -23, 48 ], [ 23, 48 ] ], 12, 22),
+
+        //  Cab up front, same shape as the lorry's
+        scene.add.rectangle(0, -39, 46, 26, colour).setStrokeStyle(4, dark),
+        scene.add.rectangle(0, -43, 38, 8, 0xb3e5fc),
+        scene.add.circle(-14, -50, 4, 0xfff176),
+        scene.add.circle(14, -50, 4, 0xfff176),
+
+        //  The big rotating drum, seen from above, with its spiral fin as stripes
+        scene.add.ellipse(0, 20, 46, 78, colour).setStrokeStyle(4, dark),
+        stripe(-4), stripe(20), stripe(44),
+
+        //  Chute at the back
+        scene.add.rectangle(0, 60, 14, 14, dark)
     ];
 }
