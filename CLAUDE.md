@@ -41,6 +41,19 @@ touch-first, with keyboard as a secondary input for desktop testing.
 - Don't add features he hasn't asked for. He drives this project one small
   ask at a time — match that scope, don't anticipate.
 
+## Known Phaser gotchas
+
+- **`add.triangle(x, y, x1, y1, x2, y2, x3, y3, ...)` miscalculates its
+  origin if any of the three points is negative** — the shape renders
+  offset from where `(x, y)` says it should be, while everything else
+  (circles, rectangles) at the same position is fine. This has bitten a
+  car's nose and an ice cream cone/hat already. Fix: translate the three
+  points so all are ≥ 0 (shift by the negative of whatever the minimum
+  x/y was), leave the `(x, y)` position argument unchanged. If a shape
+  drawn with a triangle looks subtly off-centre or detached from
+  neighbouring shapes, check this first before assuming the position math
+  is wrong.
+
 ## Skills
 
 Look for and use project skills for the areas they cover (adding maps/towns,

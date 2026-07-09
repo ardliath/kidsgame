@@ -134,8 +134,9 @@ export class IceCream extends Scene
         this.add.circle(x - 9, 742, 3, 0x263238);
         this.add.circle(x + 9, 742, 3, 0x263238);
 
-        //  A little hat, because ice cream shops need a little hat
-        this.add.triangle(x, 712, -26, 6, 26, 6, 0, -14, 0xffffff);
+        //  A little hat, because ice cream shops need a little hat.
+        //  Triangle points must be non-negative or Phaser miscalculates the origin.
+        this.add.triangle(x, 712, 0, 20, 52, 20, 26, 0, 0xffffff);
     }
 
     createHud ()
@@ -160,8 +161,10 @@ export class IceCream extends Scene
     {
         this.coneLayer.removeAll(true);
 
-        //  Waffle cone
-        const cone = this.add.triangle(CX, CONE_TIP_Y + 90, -50, 0, 50, 0, 0, 130, 0xd7a86e);
+        //  Waffle cone. Triangle points must be non-negative or Phaser
+        //  miscalculates the origin, which is why the scoops were drifting
+        //  away from it.
+        const cone = this.add.triangle(CX, CONE_TIP_Y + 90, 0, 0, 100, 0, 50, 130, 0xd7a86e);
         cone.setStrokeStyle(4, 0xa9784f);
         this.coneLayer.add(cone);
 
