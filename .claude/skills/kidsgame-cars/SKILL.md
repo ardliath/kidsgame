@@ -55,31 +55,41 @@ If it should be **drivable**, add it to `CAR_MODELS` (also in
 ```ts
 { key: 'bus', name: 'Bus' }
 ```
-This alone makes it show up as a fourth-and-beyond choice in the Options
-screen's model picker — no other code needed. Be aware the picker's panel
-was sized for exactly 4 models (`x = CX - 225 + i * 150` against a 760px-
-wide panel); a 5th model will sit right at the panel's edge. Check it in
-the preview and widen the panel in `Options.ts` if it looks cramped.
+This alone adds it to the player's fleet — it shows up as a card in the
+**builders' yard** (`Yard.ts`), which is where the player chooses which
+vehicle to drive. There is no model picker in Options any more (that was
+removed when the yard became the source of truth for which vehicle is
+current). The yard grid is 4 cards across and wraps, so a new model just
+appears in the next slot; check `Yard.ts` only if you add so many that the
+grid overflows the panel. Colour is still chosen in Options and applies to
+the whole fleet.
 
-If it should only appear as **parked scenery**, skip `CAR_MODELS` — parked
-cars are placed by `model` string directly in a map's `cars` list (see the
-kidsgame-maps skill), independent of the drivable roster.
+The fleet persists in `kids-game-fleet` localStorage (see the
+kidsgame-persistence skill and `loadFleet`/`saveFleet`). A brand-new model
+is simply "at the yard" for any existing save — the fleet loader treats any
+model not marked current-or-parked as home, so you don't need to migrate
+old saves.
+
+If a model should appear as **anonymous road traffic** rather than (or as
+well as) being drivable, place it by `model` string in a map's `cars` list
+(see the kidsgame-maps skill). Those NPC cars are separate from the
+player's fleet.
 
 ## 3. Collision box for parked cars
 
-Parked cars are static physics bodies, and static bodies can't rotate with
-the sprite — so `mapBuilder.ts` sizes each one's box from its facing
-direction using a hardcoded length:
+The player's parked fleet vehicles are static physics bodies, and static
+bodies can't rotate with the sprite — so both `Driving.ts` (parked fleet)
+and `mapBuilder.ts` (older code path) size each box from its facing using a
+hardcoded length. In `Driving.setupParkedFleet`:
 ```ts
-const length = car.model === 'lorry' ? 108 : 88;
+const long = ({ lorry: 108, mixer: 108, digger: 140 } as Record<string, number>)[model] ?? 88;
 ```
-If your new model is noticeably longer or shorter than the ~88-unit
-default (most cars), add it to this check the same way the lorry is,
-rather than leaving it with a box that doesn't match its picture.
+If your new model is noticeably longer than the ~88-unit default, add it to
+that map (and the matching one in `mapBuilder.ts`) so its collision box
+matches its picture, the same way the lorry/mixer/digger do.
 
 ## Verify
 
-Drive the new model (pick it in Options) and check it turns/reverses
-looking right at speed, then place one as a parked obstacle on a map and
-confirm the player can't drive through it and the collision box roughly
-matches what's drawn.
+Add the model, open the yard, pick it, and check it turns/reverses looking
+right at speed. Then leave it parked (pick a different vehicle) and confirm
+the parked one is a solid obstacle you can drive up to and swap back into.

@@ -32,7 +32,7 @@ export interface LegendEntry
 export interface MapObject
 {
     id?: string;
-    type: 'house' | 'site';
+    type: 'house' | 'site' | 'yard';
     col: number;
     row: number;
     w?: number;
@@ -93,6 +93,21 @@ export interface PlacedSite
     height: number;
 }
 
+//  The builders' yard: where the fleet parks. `spawn*` is the road tile the
+//  player drives out from; `slots` are the parking spots for home vehicles.
+export interface PlacedYard
+{
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    spawnX: number;
+    spawnY: number;
+    spawnHeading: number;
+    slots: { x: number; y: number }[];
+}
+
 //  A car that drives itself around the roads once the scene is running.
 //  col/row is its starting tile; heading is which way it's initially facing
 //  (see the CarPlacement.facing it came from).
@@ -113,6 +128,7 @@ export interface BuiltMap
     houses: PlacedHouse[];
     sites: PlacedSite[];
     npcCars: PlacedNpcCar[];
+    yard: PlacedYard | null;
 }
 
 const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
@@ -205,6 +221,8 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
+    let yardObj: MapObject | null = null;
+
     map.objects?.forEach((obj, index) => {
 
         if (obj.type === 'house')
@@ -214,6 +232,10 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         else if (obj.type === 'site')
         {
             siteSpecs.push({ id: obj.id ?? `${map.id}-site-${index}`, col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1 });
+        }
+        else if (obj.type === 'yard')
+        {
+            yardObj = obj;
         }
 
     });
@@ -258,6 +280,13 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     for (const spec of houseSpecs) markFootprint(spec.col, spec.row, spec.w, spec.h);
     for (const spec of siteSpecs) markFootprint(spec.col, spec.row, spec.w, spec.h);
+
+    //  Keep the auto-site system away from the yard's footprint
+    if (yardObj)
+    {
+        const y = yardObj as MapObject;
+        markFootprint(y.col, y.row, y.w ?? 3, y.h ?? 2);
+    }
 
     const pickEmptyGrass = (): { col: number; row: number } | null => {
 
@@ -530,13 +559,89 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     });
 
+    const yard = yardObj ? drawYard(scene, yardObj, tileAt) : null;
+
     buildEdgeWalls(scene, map, obstacles, cols, rows);
 
     const start = map.start
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
         : { x: width / 2, y: height / 2 };
 
-    return { obstacles, width, height, start, houses, sites, npcCars };
+    return { obstacles, width, height, start, houses, sites, npcCars, yard };
+}
+
+//  The builders' yard: a fenced gravel plot the fleet parks in. The player
+//  drives in/out via the road tile alongside it (the spawn point).
+function drawYard (scene: Scene, obj: MapObject, tileAt: (c: number, r: number) => string | null): PlacedYard
+{
+    const w = obj.w ?? 3;
+    const h = obj.h ?? 2;
+    const x = (obj.col + w / 2) * TILE;
+    const y = (obj.row + h / 2) * TILE;
+    const pw = w * TILE - 16;
+    const ph = h * TILE - 16;
+
+    //  Gravel surface with a fence border
+    scene.add.rectangle(x, y, pw, ph, 0xbcaaa4).setStrokeStyle(6, 0x6d4c41);
+
+    for (let px = x - pw / 2 + 20; px < x + pw / 2; px += 60)
+    {
+        scene.add.rectangle(px, y - ph / 2 + 4, 10, 14, 0x8d6e63);
+        scene.add.rectangle(px, y + ph / 2 - 4, 10, 14, 0x8d6e63);
+    }
+
+    scene.add.text(x, y - ph / 2 - 24, '🏗️ YARD', {
+        fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff', stroke: '#5d4037', strokeThickness: 6
+    }).setOrigin(0.5);
+
+    //  Find a road tile touching the yard to drive out onto, and face away
+    //  from the yard so he pulls onto the road rather than back into it
+    const edges: { tiles: [number, number][]; heading: number }[] = [
+        { tiles: range(obj.col, w).map(c => [ c, obj.row - 1 ] as [number, number]), heading: 0 },
+        { tiles: range(obj.col, w).map(c => [ c, obj.row + h ] as [number, number]), heading: Math.PI },
+        { tiles: range(obj.row, h).map(r => [ obj.col - 1, r ] as [number, number]), heading: -Math.PI / 2 },
+        { tiles: range(obj.row, h).map(r => [ obj.col + w, r ] as [number, number]), heading: Math.PI / 2 }
+    ];
+
+    let spawnX = x;
+    let spawnY = y;
+    let spawnHeading = 0;
+
+    for (const edge of edges)
+    {
+        const road = edge.tiles.find(([ c, r ]) => tileAt(c, r) === 'R');
+
+        if (road)
+        {
+            spawnX = (road[0] + 0.5) * TILE;
+            spawnY = (road[1] + 0.5) * TILE;
+            spawnHeading = edge.heading;
+            break;
+        }
+    }
+
+    //  Parking slots in a 4x2 grid inside the yard (first 7 used by the fleet)
+    const slots: { x: number; y: number }[] = [];
+    const slotCols = 4;
+    const slotRows = 2;
+
+    for (let sr = 0; sr < slotRows; sr++)
+    {
+        for (let sc = 0; sc < slotCols; sc++)
+        {
+            slots.push({
+                x: x - pw / 2 + pw * (sc + 0.5) / slotCols,
+                y: y - ph / 2 + ph * (sr + 0.5) / slotRows
+            });
+        }
+    }
+
+    return { id: obj.id ?? 'yard', x, y, width: pw, height: ph, spawnX, spawnY, spawnHeading, slots };
+}
+
+function range (start: number, count: number): number[]
+{
+    return Array.from({ length: count }, (_, i) => start + i);
 }
 
 //  Invisible walls along each map edge, with openings only where a road

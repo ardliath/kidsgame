@@ -1,5 +1,8 @@
+import { CAR_MODELS, DEFAULT_MODEL } from './carShapes';
+
 const SAVE_KEY = 'kids-game-save';
 const CAR_KEY = 'kids-game-car';
+const FLEET_KEY = 'kids-game-fleet';
 const BUILT_KEY = 'kids-game-built';
 const EXTRA_SITES_KEY = 'kids-game-extra-sites';
 const DEMOLISHED_KEY = 'kids-game-demolished';
@@ -77,6 +80,67 @@ export function loadCarStyle (): CarStyle | null
     catch
     {
         return null;
+    }
+}
+
+//  The player's fleet of vehicles (one of each model). Exactly one is the
+//  "current" one he's driving; the rest are either at the builders' yard
+//  (absent from `parked`) or left out in the world (in `parked` at a spot).
+export interface WorldSpot
+{
+    mapId: string;
+    x: number;
+    y: number;
+    heading: number;
+}
+
+export interface Fleet
+{
+    current: string;
+    parked: Record<string, WorldSpot>;
+}
+
+export function loadFleet (): Fleet
+{
+    const validKeys = new Set(CAR_MODELS.map(m => m.key));
+
+    try
+    {
+        const raw = localStorage.getItem(FLEET_KEY);
+        const data = raw ? JSON.parse(raw) as Fleet : null;
+
+        const current = data && validKeys.has(data.current) ? data.current : DEFAULT_MODEL;
+        const parked: Record<string, WorldSpot> = {};
+
+        if (data?.parked)
+        {
+            for (const [ model, spot ] of Object.entries(data.parked))
+            {
+                //  Skip unknown models, and never let the current one also be parked
+                if (validKeys.has(model) && model !== current && spot && typeof spot.x === 'number')
+                {
+                    parked[model] = spot;
+                }
+            }
+        }
+
+        return { current, parked };
+    }
+    catch
+    {
+        return { current: DEFAULT_MODEL, parked: {} };
+    }
+}
+
+export function saveFleet (fleet: Fleet)
+{
+    try
+    {
+        localStorage.setItem(FLEET_KEY, JSON.stringify(fleet));
+    }
+    catch
+    {
+        //  Ignore: the fleet just won't be remembered
     }
 }
 

@@ -1,9 +1,9 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { buildCarShapes, DEFAULT_COLOUR, DEFAULT_MODEL } from '../carShapes';
+import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
-import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedNpcCar, PlacedSite, TILE } from '../mapBuilder';
-import { loadCarStyle, loadCoins, loadCurrentMap, saveCurrentMap, SaveData } from '../storage';
+import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, saveCurrentMap, saveFleet, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -42,16 +42,18 @@ interface EntryState
 }
 
 //  What the pop-up bubble beside the car offers: building on a plot,
-//  visiting a house, or going into a shop
+//  visiting a house, going into a shop, or swapping into a parked vehicle
 type ActionTarget =
     { kind: 'build'; site: PlacedSite } |
     { kind: 'visit'; house: PlacedHouse } |
-    { kind: 'shop'; house: PlacedHouse };
+    { kind: 'shop'; house: PlacedHouse } |
+    { kind: 'swap'; model: string; x: number; y: number; heading: number; height: number };
 
 interface DrivingData
 {
     mapId?: string;
     entry?: EntryState;
+    fromYard?: boolean;
 }
 
 export class Driving extends Scene
@@ -68,6 +70,9 @@ export class Driving extends Scene
     sites: PlacedSite[] = [];
     npcCars: NpcCarState[] = [];
     npcGroup: Phaser.Physics.Arcade.Group;
+
+    //  Fleet vehicles left parked out in this town, offered as SWAP targets
+    parkedFleet: { model: string; x: number; y: number; heading: number }[] = [];
 
     actionBubble: Phaser.GameObjects.Container;
     bubbleBg: Phaser.GameObjects.Rectangle;
@@ -100,12 +105,14 @@ export class Driving extends Scene
             this.registry.set('gear', 1);
         }
 
+        //  Colour is a remembered choice; the model is always whichever
+        //  vehicle the fleet says is current (the yard changes this)
         if (this.registry.get('carColour') === undefined)
         {
-            const style = loadCarStyle();
-            this.registry.set('carColour', style?.colour ?? DEFAULT_COLOUR);
-            this.registry.set('carModel', style?.model ?? DEFAULT_MODEL);
+            this.registry.set('carColour', loadCarStyle()?.colour ?? DEFAULT_COLOUR);
         }
+
+        this.registry.set('carModel', loadFleet().current);
 
         if (this.registry.get('coins') === undefined)
         {
@@ -137,13 +144,23 @@ export class Driving extends Scene
 
         this.physics.world.setBounds(0, 0, built.width, built.height);
 
-        const spawn = this.sceneData.entry ?? this.startPos;
+        //  Arriving from the yard spawns him on the road beside it, driving
+        //  whatever vehicle he just picked
+        let spawn = this.sceneData.entry ?? this.startPos;
+
+        if (this.sceneData.fromYard && built.yard)
+        {
+            spawn = { x: built.yard.spawnX, y: built.yard.spawnY };
+            this.heading = built.yard.spawnHeading;
+        }
+
         this.car = this.buildCar(spawn.x, spawn.y);
         this.car.rotation = this.heading;
 
         this.physics.add.collider(this.car, built.obstacles);
 
         this.setupNpcCars(built.npcCars, built.obstacles);
+        this.setupParkedFleet(built.yard);
 
         //  Repaint the car when the options screen changes it
         this.registry.events.on('changedata-carColour', this.restyleCar, this);
@@ -264,6 +281,12 @@ export class Driving extends Scene
             }
         }
 
+        for (const parked of this.parkedFleet)
+        {
+            //  Drive up to a vehicle you left out to hop into it
+            consider(parked.x, parked.y, 68, 68, { kind: 'swap', model: parked.model, x: parked.x, y: parked.y, heading: parked.heading, height: 68 });
+        }
+
         let best: ActionTarget | null = null;
         let bestDistance = 120;
 
@@ -283,21 +306,28 @@ export class Driving extends Scene
 
         if (this.bubbleTarget)
         {
-            const at = this.bubbleTarget.kind === 'build' ? this.bubbleTarget.site : this.bubbleTarget.house;
+            const t = this.bubbleTarget;
+            const at = t.kind === 'build' ? t.site : t.kind === 'swap' ? t : t.house;
 
-            if (this.bubbleTarget.kind === 'build')
+            if (t.kind === 'build')
             {
                 this.bubbleBg.setFillStyle(0xffeb3b);
                 this.bubbleBg.setStrokeStyle(5, 0x795548);
                 this.bubbleLabel.setText('BUILD').setColor('#5d4037');
             }
-            else if (this.bubbleTarget.kind === 'visit')
+            else if (t.kind === 'visit')
             {
                 this.bubbleBg.setFillStyle(0xe1f5fe);
                 this.bubbleBg.setStrokeStyle(5, 0x0277bd);
                 this.bubbleLabel.setText('VISIT').setColor('#01579b');
             }
-            else if (this.bubbleTarget.house.shopType === 'treat')
+            else if (t.kind === 'swap')
+            {
+                this.bubbleBg.setFillStyle(0xffe0b2);
+                this.bubbleBg.setStrokeStyle(5, 0xe65100);
+                this.bubbleLabel.setText('DRIVE').setColor('#e65100');
+            }
+            else if (t.house.shopType === 'treat')
             {
                 this.bubbleBg.setFillStyle(0xfce4ec);
                 this.bubbleBg.setStrokeStyle(5, 0xd81b60);
@@ -323,6 +353,15 @@ export class Driving extends Scene
     {
         const dashboard = this.scene.get('Dashboard') as Dashboard;
         dashboard.releaseControls();
+
+        //  Swapping happens in place — it restarts Driving rather than opening
+        //  a mini-game scene, so handle it before the pause/launch below
+        if (target.kind === 'swap')
+        {
+            this.swapIntoVehicle(target);
+
+            return;
+        }
 
         if (target.kind === 'build')
         {
@@ -364,6 +403,79 @@ export class Driving extends Scene
     {
         this.car.removeAll(true);
         this.car.add(buildCarShapes(this, this.registry.get('carModel') as string, this.registry.get('carColour') as number));
+    }
+
+    //  ---- The player's parked fleet: vehicles left out, and the ones at home ----
+
+    setupParkedFleet (yard: PlacedYard | null)
+    {
+        this.parkedFleet = [];
+
+        const fleet = loadFleet();
+        const mapId = this.registry.get('mapId') as string;
+        const colour = this.registry.get('carColour') as number;
+        const group = this.physics.add.staticGroup();
+
+        const park = (model: string, x: number, y: number, heading: number, swappable: boolean) => {
+
+            const container = this.add.container(x, y, buildCarShapes(this, model, colour));
+            container.setRotation(heading);
+
+            const long = ({ lorry: 108, mixer: 108, digger: 140 } as Record<string, number>)[model] ?? 88;
+            const horizontal = Math.abs(Math.sin(heading)) > 0.5;
+            container.setSize(horizontal ? long : 56, horizontal ? 56 : long);
+
+            this.physics.add.existing(container, true);
+            group.add(container);
+
+            if (swappable)
+            {
+                this.parkedFleet.push({ model, x, y, heading });
+            }
+        };
+
+        //  Vehicles he left out in this town — these can be swapped into
+        for (const [ model, spot ] of Object.entries(fleet.parked))
+        {
+            if (spot.mapId === mapId)
+            {
+                park(model, spot.x, spot.y, spot.heading, true);
+            }
+        }
+
+        //  The rest of the fleet sits at home in the yard (home town only).
+        //  These aren't swap targets — he picks them from the yard screen.
+        if (yard)
+        {
+            const homeModels = CAR_MODELS.map(m => m.key).filter(k => k !== fleet.current && !fleet.parked[k]);
+
+            homeModels.forEach((model, i) => {
+
+                const slot = yard.slots[i];
+
+                if (slot)
+                {
+                    park(model, slot.x, slot.y, 0, false);
+                }
+
+            });
+        }
+
+        this.physics.add.collider(this.car, group);
+    }
+
+    swapIntoVehicle (target: { model: string; x: number; y: number; heading: number })
+    {
+        const fleet = loadFleet();
+        const mapId = this.registry.get('mapId') as string;
+
+        //  His old vehicle stays where he stopped; he hops into the parked one
+        fleet.parked[fleet.current] = { mapId, x: this.car.x, y: this.car.y, heading: this.heading };
+        delete fleet.parked[target.model];
+        fleet.current = target.model;
+        saveFleet(fleet);
+
+        this.scene.restart({ mapId, entry: { x: target.x, y: target.y, heading: target.heading, speed: 0 } });
     }
 
     //  ---- NPC traffic: cars that drive themselves along the road tiles ----

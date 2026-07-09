@@ -78,6 +78,7 @@ export class Dashboard extends Scene
         this.createPedal();
         this.createSettingsCog();
         this.createMapButton();
+        this.createYardButton();
 
         this.repaintPanel();
         this.registry.events.on('changedata-carColour', this.repaintPanel, this);
@@ -317,6 +318,22 @@ export class Dashboard extends Scene
         this.add.zone(GAME_WIDTH - 140, 50, 90, 90).setInteractive().on('pointerdown', () => this.openMap());
     }
 
+    createYardButton ()
+    {
+        const parts: Phaser.GameObjects.GameObject[] = [
+            this.add.circle(0, 0, 36, 0x102027, 0.45)
+        ];
+
+        //  A builder's hard hat
+        parts.push(this.add.rectangle(0, 8, 52, 10, 0xfdd835).setStrokeStyle(2, 0xf9a825));
+        parts.push(this.add.ellipse(0, 2, 34, 30, 0xfdd835).setStrokeStyle(2, 0xf9a825));
+        parts.push(this.add.rectangle(0, -6, 8, 18, 0xf9a825));
+
+        this.add.container(GAME_WIDTH - 230, 50, parts);
+
+        this.add.zone(GAME_WIDTH - 230, 50, 90, 90).setInteractive().on('pointerdown', () => this.openYard());
+    }
+
     //  Drop the controls so the car isn't stuck accelerating while paused
     releaseControls ()
     {
@@ -342,6 +359,15 @@ export class Dashboard extends Scene
 
         this.scene.pause('Driving');
         this.scene.launch('MiniMap');
+        this.scene.pause();
+    }
+
+    openYard ()
+    {
+        this.releaseControls();
+
+        this.scene.pause('Driving');
+        this.scene.launch('Yard');
         this.scene.pause();
     }
 

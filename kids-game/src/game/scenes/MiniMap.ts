@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, TILE } from '../mapBuilder';
+import { loadFleet } from '../storage';
 import { Driving } from './Driving';
 
 const CX = GAME_WIDTH / 2;
@@ -100,14 +101,17 @@ export class MiniMap extends Scene
             this.drawTown(maps[id], cellOf(id), id === currentMap);
         }
 
-        //  You-are-here marker
+        //  His parked vehicles, then the you-are-here marker on top
+        this.drawFleet(maps, cellOf);
         this.drawPlayer(maps, cellOf, currentMap);
 
-        //  Legend
-        const legendY = originY + totalH + 60;
-        this.legendItem(CX - 250, legendY, '🏪', 'Shop');
-        this.legendItem(CX - 70, legendY, '🍦', 'Ice cream');
-        this.legendItem(CX + 130, legendY, '🚗', 'You');
+        //  Legend, over two rows
+        const legendY = originY + totalH + 46;
+        this.legendItem(CX - 250, legendY, '🚗', 'You');
+        this.legendItem(CX - 90, legendY, '🚙', 'Your cars');
+        this.legendItem(CX + 130, legendY, '🏗️', 'Yard');
+        this.legendItem(CX - 250, legendY + 34, '🏪', 'Shop');
+        this.legendItem(CX - 90, legendY + 34, '🍦', 'Ice cream');
 
         this.input.keyboard?.on('keydown-ESC', () => this.close());
     }
@@ -183,6 +187,11 @@ export class MiniMap extends Scene
                 //  A shop: emoji marker
                 const emoji = obj.sign.includes('ICE') ? '🍦' : '🏪';
                 this.add.text(cx, cy, emoji, { fontSize: 26 }).setOrigin(0.5);
+            }
+            else if (obj.type === 'yard')
+            {
+                this.add.rectangle(cx, cy, (obj.w ?? 3) * TILE_PX - 2, (obj.h ?? 2) * TILE_PX - 2, 0xbcaaa4).setStrokeStyle(2, 0x6d4c41);
+                this.add.text(cx, cy, '🏗️', { fontSize: 24 }).setOrigin(0.5);
             }
             else if (obj.type === 'house')
             {
@@ -269,6 +278,28 @@ export class MiniMap extends Scene
         const marker = this.add.text(x, y, '🚗', { fontSize: 30 }).setOrigin(0.5);
 
         this.tweens.add({ targets: marker, scale: 1.3, duration: 500, yoyo: true, repeat: -1 });
+    }
+
+    //  Vehicles he's left parked out in the world (home ones live in the yard)
+    drawFleet (maps: Record<string, MapData>, cellOf: (id: string) => { x: number; y: number })
+    {
+        const fleet = loadFleet();
+
+        for (const [ , spot ] of Object.entries(fleet.parked))
+        {
+            const map = maps[spot.mapId];
+
+            if (!map)
+            {
+                continue;
+            }
+
+            const cell = cellOf(spot.mapId);
+            const col = Phaser.Math.Clamp(Math.floor(spot.x / TILE), 0, map.tiles[0].length - 1);
+            const row = Phaser.Math.Clamp(Math.floor(spot.y / TILE), 0, map.tiles.length - 1);
+
+            this.add.text(cell.x + col * TILE_PX + TILE_PX / 2, cell.y + row * TILE_PX + TILE_PX / 2, '🚙', { fontSize: 22 }).setOrigin(0.5);
+        }
     }
 
     legendItem (x: number, y: number, emoji: string, label: string)

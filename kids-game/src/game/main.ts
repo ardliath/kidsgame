@@ -11,6 +11,7 @@ import { MiniMap } from './scenes/MiniMap';
 import { Options } from './scenes/Options';
 import { Preloader } from './scenes/Preloader';
 import { Shop } from './scenes/Shop';
+import { Yard } from './scenes/Yard';
 
 //  Find out more information about the Game Config at:
 //  https://docs.phaser.io/api-documentation/typedef/types-core#gameconfig
@@ -38,7 +39,8 @@ const config: Phaser.Types.Core.GameConfig = {
         Cooking,
         Shop,
         IceCream,
-        MiniMap
+        MiniMap,
+        Yard
     ]
 };
 

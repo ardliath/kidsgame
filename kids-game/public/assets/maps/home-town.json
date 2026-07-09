@@ -28,6 +28,7 @@
         },
         { "id": "home-plot-1", "type": "site", "col": 3, "row": 4 },
         { "id": "home-plot-2", "type": "site", "col": 7, "row": 10 },
+        { "id": "builders-yard", "type": "yard", "col": 1, "row": 10, "w": 3, "h": 2 },
         {
             "id": "corner-shop",
             "type": "house",

@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { buildCarShapes, CAR_COLOURS, CAR_MODELS } from '../carShapes';
+import { CAR_COLOURS } from '../carShapes';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { loadGame, loadPlayerName, saveCarStyle, saveGame, savePlayerName } from '../storage';
 import { Dashboard } from './Dashboard';
@@ -11,8 +11,6 @@ const CX = GAME_WIDTH / 2;
 export class Options extends Scene
 {
     swatchRings: Map<number, Phaser.GameObjects.Arc> = new Map();
-    modelSlots: Map<string, Phaser.GameObjects.Rectangle> = new Map();
-    modelPreviews: Map<string, Phaser.GameObjects.Container> = new Map();
     message: Phaser.GameObjects.Text;
 
     nameOverlay: Phaser.GameObjects.Container | null = null;
@@ -31,9 +29,9 @@ export class Options extends Scene
 
         const panel = this.add.graphics();
         panel.fillStyle(0x263238, 1);
-        panel.fillRoundedRect(CX - 380, 160, 760, 780, 24);
+        panel.fillRoundedRect(CX - 380, 160, 760, 480, 24);
         panel.lineStyle(6, 0x102027, 1);
-        panel.strokeRoundedRect(CX - 380, 160, 760, 780, 24);
+        panel.strokeRoundedRect(CX - 380, 160, 760, 480, 24);
 
         this.add.text(CX, 208, 'Options', {
             fontFamily: 'Arial Black', fontSize: 44, color: '#ffffff'
@@ -69,38 +67,11 @@ export class Options extends Scene
 
         });
 
-        this.add.text(CX, 545, 'Car model', {
-            fontFamily: 'Arial Black', fontSize: 26, color: '#b0bec5'
+        this.add.text(CX, 545, 'Pick which vehicle to drive at the 🏗️ yard', {
+            fontFamily: 'Arial Black', fontSize: 20, color: '#78909c'
         }).setOrigin(0.5);
 
-        //  Wraps to a new row every 4 models, so the roster can keep growing
-        const PER_ROW = 4;
-        const ROW_SPACING = 165;
-
-        CAR_MODELS.forEach((model, i) => {
-
-            const row = Math.floor(i / PER_ROW);
-            const col = i % PER_ROW;
-            const inRow = Math.min(PER_ROW, CAR_MODELS.length - row * PER_ROW);
-
-            const x = CX - (inRow - 1) * 75 + col * 150;
-            const y = 655 + row * ROW_SPACING;
-
-            const slot = this.add.rectangle(x, y, 120, 135, 0x37474f);
-            this.modelSlots.set(model.key, slot);
-
-            const preview = this.add.container(x, y - 8, buildCarShapes(this, model.key, this.registry.get('carColour') as number));
-            this.modelPreviews.set(model.key, preview);
-
-            this.add.text(x, y + 52, model.name, {
-                fontFamily: 'Arial Black', fontSize: 16, color: '#ffffff'
-            }).setOrigin(0.5);
-
-            this.add.zone(x, y, 130, 145).setInteractive().on('pointerdown', () => this.selectModel(model.key));
-
-        });
-
-        this.message = this.add.text(CX, 915, '', {
+        this.message = this.add.text(CX, 595, '', {
             fontFamily: 'Arial Black', fontSize: 24, color: '#fff176'
         }).setOrigin(0.5);
 
@@ -247,16 +218,10 @@ export class Options extends Scene
     refreshSelection ()
     {
         const colour = this.registry.get('carColour') as number;
-        const model = this.registry.get('carModel') as string;
 
         for (const [ value, ring ] of this.swatchRings)
         {
             ring.setVisible(value === colour);
-        }
-
-        for (const [ key, slot ] of this.modelSlots)
-        {
-            slot.setStrokeStyle(5, key === model ? 0xffffff : 0x102027);
         }
     }
 
@@ -264,21 +229,6 @@ export class Options extends Scene
     {
         this.registry.set('carColour', colour);
         saveCarStyle({ colour, model: this.registry.get('carModel') as string });
-
-        //  Repaint the little preview cars too
-        for (const [ key, preview ] of this.modelPreviews)
-        {
-            preview.removeAll(true);
-            preview.add(buildCarShapes(this, key, colour));
-        }
-
-        this.refreshSelection();
-    }
-
-    selectModel (model: string)
-    {
-        this.registry.set('carModel', model);
-        saveCarStyle({ colour: this.registry.get('carColour') as number, model });
 
         this.refreshSelection();
     }
