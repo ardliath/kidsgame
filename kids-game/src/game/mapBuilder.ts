@@ -41,8 +41,10 @@ export interface MapObject
     facing?: Edge;
     sign?: string;
 
-    //  A signed building with a sells list is a shop
+    //  A signed building with a sells list is a shop. 'grocery' sells
+    //  cooking ingredients; 'treat' is an eat-it-now shop like ice cream.
     sells?: string[];
+    shopType?: 'grocery' | 'treat';
 }
 
 //  Parked cars: obstacles the player weaves around, drawn with the same
@@ -78,6 +80,7 @@ export interface PlacedHouse
     colour: number;
     sign?: string;
     sells?: string[];
+    shopType?: 'grocery' | 'treat';
 }
 
 //  A construction site that hasn't been built on yet
@@ -162,7 +165,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     //  ---- Data pass: decide what stands where before drawing anything ----
 
-    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[] }
+    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' }
     interface SiteSpec { id: string; col: number; row: number; w: number; h: number }
 
     const builtHouses = loadBuiltHouses();
@@ -194,7 +197,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
         if (obj.type === 'house')
         {
-            houseSpecs.push({ id: obj.id ?? `${map.id}-object-${index}`, col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1, colour: obj.colour, facing: obj.facing, sign: obj.sign, sells: obj.sells });
+            houseSpecs.push({ id: obj.id ?? `${map.id}-object-${index}`, col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1, colour: obj.colour, facing: obj.facing, sign: obj.sign, sells: obj.sells, shopType: obj.shopType });
         }
         else if (obj.type === 'site')
         {
@@ -306,7 +309,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     //  Shared by plain H tiles, legend characters and map objects.
     //  Every house gets a unique, stable id.
-    const placeHouse = (id: string, col: number, row: number, w: number, h: number, colourName?: string, facing?: Edge, sign?: string, sells?: string[]) => {
+    const placeHouse = (id: string, col: number, row: number, w: number, h: number, colourName?: string, facing?: Edge, sign?: string, sells?: string[], shopType?: 'grocery' | 'treat') => {
 
         if (usedIds.has(id))
         {
@@ -362,7 +365,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
         solid(rect);
 
-        houses.push({ id, x: hx, y: hy, width: hw, height: hh, colour, sign, sells });
+        houses.push({ id, x: hx, y: hy, width: hw, height: hh, colour, sign, sells, shopType });
     };
 
     for (let r = 0; r < rows; r++)
@@ -466,7 +469,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  Draw everything the data pass decided on
     for (const spec of houseSpecs)
     {
-        placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, spec.colour, spec.facing, spec.sign, spec.sells);
+        placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, spec.colour, spec.facing, spec.sign, spec.sells, spec.shopType);
     }
 
     for (const spec of siteSpecs)

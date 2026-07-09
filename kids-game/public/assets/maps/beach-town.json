@@ -25,7 +25,9 @@
             "h": 1,
             "colour": "pink",
             "facing": "south",
-            "sign": "ICE CREAM"
+            "sign": "ICE CREAM",
+            "sells": [ "vanilla", "strawberry", "chocolate", "mint" ],
+            "shopType": "treat"
         },
         { "id": "beach-plot-1", "type": "site", "col": 4, "row": 8 }
     ],

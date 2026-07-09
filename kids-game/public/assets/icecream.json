@@ -1,0 +1,9 @@
+{
+    "maxScoops": 3,
+    "flavours": [
+        { "id": "vanilla", "name": "Vanilla", "colour": "#fff8e1", "price": 1 },
+        { "id": "strawberry", "name": "Strawberry", "colour": "#f48fb1", "price": 1 },
+        { "id": "chocolate", "name": "Chocolate", "colour": "#6d4c41", "price": 2 },
+        { "id": "mint", "name": "Mint", "colour": "#a5d6a7", "price": 2 }
+    ]
+}

@@ -273,6 +273,12 @@ export class Driving extends Scene
                 this.bubbleBg.setStrokeStyle(5, 0x0277bd);
                 this.bubbleLabel.setText('VISIT').setColor('#01579b');
             }
+            else if (this.bubbleTarget.house.shopType === 'treat')
+            {
+                this.bubbleBg.setFillStyle(0xfce4ec);
+                this.bubbleBg.setStrokeStyle(5, 0xd81b60);
+                this.bubbleLabel.setText('TREAT').setColor('#880e4f');
+            }
             else
             {
                 this.bubbleBg.setFillStyle(0xc8e6c9);
@@ -301,6 +307,10 @@ export class Driving extends Scene
         else if (target.kind === 'visit')
         {
             this.scene.launch('Interior', { houseId: target.house.id, colour: target.house.colour });
+        }
+        else if (target.house.shopType === 'treat')
+        {
+            this.scene.launch('IceCream', { houseId: target.house.id, colour: target.house.colour, sells: target.house.sells ?? [] });
         }
         else
         {
