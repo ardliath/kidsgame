@@ -2,7 +2,6 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { CAR_COLOURS } from '../carShapes';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { isMuted, setMuted } from '../sfx';
 import { loadGame, loadPlayerName, saveCarStyle, saveGame, savePlayerName } from '../storage';
 import { Dashboard } from './Dashboard';
 import { Driving } from './Driving';
@@ -30,9 +29,9 @@ export class Options extends Scene
 
         const panel = this.add.graphics();
         panel.fillStyle(0x263238, 1);
-        panel.fillRoundedRect(CX - 380, 160, 760, 560, 24);
+        panel.fillRoundedRect(CX - 380, 160, 760, 480, 24);
         panel.lineStyle(6, 0x102027, 1);
-        panel.strokeRoundedRect(CX - 380, 160, 760, 560, 24);
+        panel.strokeRoundedRect(CX - 380, 160, 760, 480, 24);
 
         this.add.text(CX, 208, 'Options', {
             fontFamily: 'Arial Black', fontSize: 44, color: '#ffffff'
@@ -68,30 +67,11 @@ export class Options extends Scene
 
         });
 
-        this.add.text(CX, 525, 'Pick which vehicle to drive at the 🏗️ yard', {
+        this.add.text(CX, 545, 'Pick which vehicle to drive at the 🏗️ yard', {
             fontFamily: 'Arial Black', fontSize: 20, color: '#78909c'
         }).setOrigin(0.5);
 
-        //  Sound on/off
-        const sg = this.add.graphics();
-        sg.fillStyle(0x455a64, 1);
-        sg.fillRoundedRect(CX - 150, 568, 300, 64, 16);
-        sg.lineStyle(4, 0x102027, 1);
-        sg.strokeRoundedRect(CX - 150, 568, 300, 64, 16);
-
-        const soundText = this.add.text(CX, 600, '', {
-            fontFamily: 'Arial Black', fontSize: 26, color: '#ffffff'
-        }).setOrigin(0.5);
-
-        const refreshSound = () => soundText.setText(isMuted() ? '🔇 Sound Off' : '🔊 Sound On');
-        refreshSound();
-
-        this.add.zone(CX, 600, 310, 74).setInteractive().on('pointerdown', () => {
-            setMuted(!isMuted());
-            refreshSound();
-        });
-
-        this.message = this.add.text(CX, 668, '', {
+        this.message = this.add.text(CX, 595, '', {
             fontFamily: 'Arial Black', fontSize: 24, color: '#fff176'
         }).setOrigin(0.5);
 

@@ -12,7 +12,6 @@ const INTERIORS_KEY = 'kids-game-interiors';
 const NAME_KEY = 'kids-game-name';
 const COINS_KEY = 'kids-game-coins';
 const PANTRY_KEY = 'kids-game-pantry';
-const MUTED_KEY = 'kids-game-muted';
 
 export interface SaveData
 {
@@ -386,31 +385,6 @@ export function savePantry (pantry: Pantry)
     try
     {
         localStorage.setItem(PANTRY_KEY, JSON.stringify(pantry));
-    }
-    catch
-    {
-        //  Ignore
-    }
-}
-
-//  Whether the player has turned the sound off (default: on)
-export function loadMuted (): boolean
-{
-    try
-    {
-        return localStorage.getItem(MUTED_KEY) === '1';
-    }
-    catch
-    {
-        return false;
-    }
-}
-
-export function saveMuted (muted: boolean)
-{
-    try
-    {
-        localStorage.setItem(MUTED_KEY, muted ? '1' : '0');
     }
     catch
     {

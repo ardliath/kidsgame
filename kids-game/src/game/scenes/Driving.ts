@@ -3,7 +3,6 @@ import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
-import { initSfx, playBrake, playCrunch, setEngine } from '../sfx';
 import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, pantryExists, saveCurrentMap, saveFleet, savePantry, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
@@ -74,14 +73,6 @@ export class Driving extends Scene
 
     //  Fleet vehicles left parked out in this town, offered as SWAP targets
     parkedFleet: { model: string; x: number; y: number; heading: number }[] = [];
-
-    //  Sound state: whether he's been going fast (for the brake screech),
-    //  whether he was hit last frame (for the crunch), and cooldowns so
-    //  neither retriggers every frame
-    wasFast = false;
-    wasHit = false;
-    brakeCooldown = 0;
-    crunchCooldown = 0;
 
     actionBubble: Phaser.GameObjects.Container;
     bubbleBg: Phaser.GameObjects.Rectangle;
@@ -194,22 +185,9 @@ export class Driving extends Scene
         this.registry.events.on('changedata-carColour', this.restyleCar, this);
         this.registry.events.on('changedata-carModel', this.restyleCar, this);
 
-        //  Sound: start the audio engine, reset the per-life sound state, and
-        //  hush the motor whenever a mini-game pauses driving
-        initSfx(this);
-        this.wasFast = false;
-        this.wasHit = false;
-        this.brakeCooldown = 0;
-        this.crunchCooldown = 0;
-
-        const quietEngine = () => setEngine(0);
-        this.events.on(Phaser.Scenes.Events.PAUSE, quietEngine);
-
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.registry.events.off('changedata-carColour', this.restyleCar, this);
             this.registry.events.off('changedata-carModel', this.restyleCar, this);
-            this.events.off(Phaser.Scenes.Events.PAUSE, quietEngine);
-            setEngine(0);
         });
 
         const cam = this.cameras.main;
@@ -734,40 +712,7 @@ export class Driving extends Scene
         this.car.rotation = this.heading;
 
         //  The dashboard speedo reads this
-        const speedAbs = Math.abs(this.speed);
-        this.registry.set('speed', speedAbs);
-
-        //  ---- engine, brakes and crunches ----
-        setEngine(speedAbs / 330);
-
-        this.brakeCooldown = Math.max(0, this.brakeCooldown - dt);
-        this.crunchCooldown = Math.max(0, this.crunchCooldown - dt);
-
-        //  A tyre screech when he pulls up after really going for it
-        if (speedAbs > 200)
-        {
-            this.wasFast = true;
-        }
-
-        if (this.wasFast && speedAbs < 40 && this.brakeCooldown === 0)
-        {
-            playBrake();
-            this.brakeCooldown = 0.8;
-            this.wasFast = false;
-        }
-
-        //  A crunch the moment he thumps into something while moving
-        const touch = body.touching;
-        const block = body.blocked;
-        const hit = touch.up || touch.down || touch.left || touch.right || block.up || block.down || block.left || block.right;
-
-        if (hit && !this.wasHit && speedAbs > 70 && this.crunchCooldown === 0)
-        {
-            playCrunch();
-            this.crunchCooldown = 0.4;
-        }
-
-        this.wasHit = hit;
+        this.registry.set('speed', Math.abs(this.speed));
 
         //  Through a gap in the edge walls and off the map = drive to the next town
         const margin = 20;
