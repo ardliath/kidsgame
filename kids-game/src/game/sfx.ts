@@ -138,7 +138,7 @@ export function setEngine (active: boolean, speedFrac: number)
     const frac = Math.max(0, Math.min(1, speedFrac));
 
     engineOsc.frequency.linearRampToValueAtTime(70 + frac * 90, now + 0.12);
-    engineGain.gain.linearRampToValueAtTime(active ? 0.008 + frac * 0.022 : 0, now + (active ? 0.1 : 0.25));
+    engineGain.gain.linearRampToValueAtTime(active ? 0.03 + frac * 0.07 : 0, now + (active ? 0.1 : 0.25));
 }
 
 export function playBrake ()
@@ -160,7 +160,7 @@ export function playBrake ()
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.22, now + 0.03);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
 
     source.connect(band);
@@ -187,7 +187,7 @@ export function playCrunch ()
     low.frequency.value = 900;
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.setValueAtTime(0.32, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
 
     source.connect(low);
@@ -202,7 +202,7 @@ export function playCrunch ()
     thud.frequency.exponentialRampToValueAtTime(40, now + 0.18);
 
     const thudGain = ctx.createGain();
-    thudGain.gain.setValueAtTime(0.12, now);
+    thudGain.gain.setValueAtTime(0.2, now);
     thudGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
 
     thud.connect(thudGain);
@@ -211,10 +211,6 @@ export function playCrunch ()
     thud.stop(now + 0.22);
 }
 
-//  A horn honk that always plays, mute or not — a deliberate diagnostic
-//  escape hatch. If this is silent, the problem is somewhere below the
-//  mute toggle (device volume, the physical iPad silent switch, autoplay
-//  policy) rather than in the game's own volume logic.
 export function playHorn ()
 {
     //  Make absolutely sure the context exists and is actually running —
@@ -222,7 +218,7 @@ export function playHorn ()
     initSfx();
     ctx?.resume();
 
-    if (!ctx)
+    if (!ctx || !master)
     {
         return;
     }
@@ -230,7 +226,7 @@ export function playHorn ()
     const now = ctx.currentTime;
     const out = ctx.createGain();
     out.gain.value = 0.25;
-    out.connect(ctx.destination);
+    out.connect(master);
 
     for (const freq of [ 370, 440 ])
     {
@@ -303,7 +299,7 @@ function playNote (freq: number, at: number, duration: number)
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(0.035, at + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.13, at + 0.04);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
 
     osc.connect(gain);
