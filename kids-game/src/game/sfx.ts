@@ -211,6 +211,45 @@ export function playCrunch ()
     thud.stop(now + 0.22);
 }
 
+//  A horn honk that always plays, mute or not — a deliberate diagnostic
+//  escape hatch. If this is silent, the problem is somewhere below the
+//  mute toggle (device volume, the physical iPad silent switch, autoplay
+//  policy) rather than in the game's own volume logic.
+export function playHorn ()
+{
+    //  Make absolutely sure the context exists and is actually running —
+    //  don't rely on the generic first-tap unlock having already fired
+    initSfx();
+    ctx?.resume();
+
+    if (!ctx)
+    {
+        return;
+    }
+
+    const now = ctx.currentTime;
+    const out = ctx.createGain();
+    out.gain.value = 0.25;
+    out.connect(ctx.destination);
+
+    for (const freq of [ 370, 440 ])
+    {
+        const osc = ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.setValueAtTime(0.5, now + 0.28);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+
+        osc.connect(gain);
+        gain.connect(out);
+        osc.start(now);
+        osc.stop(now + 0.4);
+    }
+}
+
 export function setMuted (value: boolean)
 {
     muted = value;

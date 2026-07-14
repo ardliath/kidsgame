@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { DASH_HEIGHT, DASH_TOP, GAME_WIDTH } from '../layout';
+import { playHorn } from '../sfx';
 
 //  Wheel far left and pedal far right for thumbs, gear stick in the middle
 const DASH_MID = DASH_TOP + DASH_HEIGHT / 2;
@@ -134,6 +135,21 @@ export class Dashboard extends Scene
 
             this.wheelPointerId = pointer.id;
             this.lastPointerAngle = Phaser.Math.Angle.Between(WHEEL_X, WHEEL_Y, pointer.x, pointer.y);
+
+        });
+
+        //  The horn: pressing the hub always honks, whatever the sound
+        //  toggle says — it's a deliberate way to test whether any audio
+        //  reaches the speakers at all. Added after (so on top of) the
+        //  steering zone, so a hub press doesn't also grab the wheel.
+        const hubZone = this.add.zone(WHEEL_X, WHEEL_Y, 88, 88);
+        hubZone.setInteractive();
+
+        hubZone.on('pointerdown', () => {
+
+            playHorn();
+            this.hubDot.setScale(1.25);
+            this.tweens.add({ targets: this.hubDot, scale: 1, duration: 200, ease: 'Back.Out' });
 
         });
     }
