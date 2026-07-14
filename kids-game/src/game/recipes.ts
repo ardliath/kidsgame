@@ -46,6 +46,10 @@ export interface RecipeDef
     ingredients?: string[];
     method?: 'toaster' | 'hob' | 'pour';
     stirs?: number;
+
+    //  Stays off the "what shall we make?" picker until this many of the
+    //  other recipes have been cooked at least once
+    requiresCompleted?: number;
 }
 
 //  Every recipe becomes a list of steps. New recipes use "steps"; older

@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { CookStep, drawFoodIcon, foodColour, RecipeConfig, RecipeDef, recipeSteps } from '../recipes';
-import { loadPantry, Pantry, savePantry } from '../storage';
+import { loadCompletedRecipes, loadPantry, Pantry, saveCompletedRecipe, savePantry } from '../storage';
 import { Interior } from './Interior';
 
 const CX = GAME_WIDTH / 2;
@@ -139,24 +139,42 @@ export class Cooking extends Scene
         this.newStepLayer();
         this.instruction.setText('What shall we make?');
 
+        const done = loadCompletedRecipes();
         const recipes = this.config.recipes;
+
+        const remainingToUnlock = (recipe: RecipeDef) => recipe.requiresCompleted === undefined
+            ? 0
+            : Math.max(0, recipe.requiresCompleted - recipes.filter(r => r.id !== recipe.id && done.includes(r.id)).length);
 
         recipes.forEach((recipe, i) => {
 
             const x = CX + (i - (recipes.length - 1) / 2) * 300;
             const y = 450;
+            const left = remainingToUnlock(recipe);
+            const locked = left > 0;
 
-            this.stepLayer.add(this.add.rectangle(x, y, 250, 300, 0x455a64).setStrokeStyle(6, 0x263238));
+            this.stepLayer.add(this.add.rectangle(x, y, 250, 300, 0x455a64).setStrokeStyle(6, 0x263238).setAlpha(locked ? 0.5 : 1));
 
-            this.foodIcon(recipe.result.icon, recipe.result.colour, x, y - 60, 2);
+            const icon = this.foodIcon(recipe.result.icon, recipe.result.colour, x, y - 60, 2);
+            icon.setAlpha(locked ? 0.4 : 1);
 
             this.stepLayer.add(this.add.text(x, y + 90, recipe.name, {
                 fontFamily: 'Arial Black', fontSize: 26, color: '#ffffff'
-            }).setOrigin(0.5));
+            }).setOrigin(0.5).setAlpha(locked ? 0.5 : 1));
 
-            const zone = this.add.zone(x, y, 260, 310).setInteractive();
-            zone.on('pointerdown', () => this.startRecipe(recipe));
-            this.stepLayer.add(zone);
+            if (locked)
+            {
+                this.stepLayer.add(this.add.text(x, y - 60, '🔒', { fontSize: 48 }).setOrigin(0.5));
+                this.stepLayer.add(this.add.text(x, y + 130, `Cook ${left} more first`, {
+                    fontFamily: 'Arial Black', fontSize: 18, color: '#ffe082'
+                }).setOrigin(0.5));
+            }
+            else
+            {
+                const zone = this.add.zone(x, y, 260, 310).setInteractive();
+                zone.on('pointerdown', () => this.startRecipe(recipe));
+                this.stepLayer.add(zone);
+            }
 
         });
     }
@@ -607,6 +625,8 @@ export class Cooking extends Scene
         }
 
         const recipe = this.recipe;
+
+        saveCompletedRecipe(recipe.id);
 
         this.newStepLayer();
         this.busy = false;

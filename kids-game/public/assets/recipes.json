@@ -3,7 +3,8 @@
         "bread": { "name": "Bread", "colour": "#e0b070", "icon": "bread", "price": 1 },
         "pasta": { "name": "Pasta", "colour": "#ffd54f", "icon": "pasta", "price": 2 },
         "apple-juice": { "name": "Apple juice", "colour": "#9ccc65", "icon": "carton", "price": 2 },
-        "water": { "name": "Water", "colour": "#4fc3f7", "icon": "jug" }
+        "water": { "name": "Water", "colour": "#4fc3f7", "icon": "jug" },
+        "croissant-dough": { "name": "Croissant dough", "colour": "#f5deb3", "icon": "dough", "price": 3 }
     },
     "recipes": [
         {
@@ -33,6 +34,16 @@
             "steps": [
                 { "type": "fetch", "ingredient": "apple-juice", "instruction": "Find the apple juice!" },
                 { "type": "pour", "ingredient": "apple-juice", "into": "glass", "instruction": "Hold the carton to pour!" }
+            ]
+        },
+        {
+            "id": "croissant",
+            "name": "Croissant",
+            "result": { "colour": "#d2a679", "icon": "croissant" },
+            "requiresCompleted": 2,
+            "steps": [
+                { "type": "fetch", "ingredient": "croissant-dough", "instruction": "Find the croissant dough!" },
+                { "type": "toast", "instruction": "Push the lever to bake it!" }
             ]
         }
     ]

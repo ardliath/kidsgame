@@ -13,6 +13,7 @@ const NAME_KEY = 'kids-game-name';
 const COINS_KEY = 'kids-game-coins';
 const PANTRY_KEY = 'kids-game-pantry';
 const MUTED_KEY = 'kids-game-muted';
+const COMPLETED_RECIPES_KEY = 'kids-game-recipes-done';
 
 export interface SaveData
 {
@@ -411,6 +412,38 @@ export function saveMuted (muted: boolean)
     try
     {
         localStorage.setItem(MUTED_KEY, muted ? '1' : '0');
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
+//  Recipes he's cooked at least once, so new ones can unlock once he's
+//  gotten through most of what's already there
+export function loadCompletedRecipes (): string[]
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(COMPLETED_RECIPES_KEY) ?? '[]') as string[];
+    }
+    catch
+    {
+        return [];
+    }
+}
+
+export function saveCompletedRecipe (recipeId: string)
+{
+    try
+    {
+        const done = loadCompletedRecipes();
+
+        if (!done.includes(recipeId))
+        {
+            done.push(recipeId);
+            localStorage.setItem(COMPLETED_RECIPES_KEY, JSON.stringify(done));
+        }
     }
     catch
     {

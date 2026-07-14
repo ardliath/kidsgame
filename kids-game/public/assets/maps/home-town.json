@@ -40,7 +40,7 @@
             "colour": "orange",
             "facing": "west",
             "sign": "SHOP",
-            "sells": [ "bread", "pasta", "apple-juice" ]
+            "sells": [ "bread", "pasta", "apple-juice", "croissant-dough" ]
         }
     ],
     "cars": [
