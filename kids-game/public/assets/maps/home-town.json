@@ -48,7 +48,9 @@
         { "col": 7, "row": 3, "facing": "west", "colour": "purple", "model": "truck" },
         { "col": 2, "row": 6, "facing": "north", "colour": "yellow", "model": "racer" },
         { "col": 9, "row": 7, "facing": "south", "colour": "green", "model": "hatch" },
-        { "col": 5, "row": 9, "facing": "west", "colour": "teal", "model": "lorry" }
+        { "col": 5, "row": 9, "facing": "west", "colour": "teal", "model": "lorry" },
+        { "col": 2, "row": 5, "facing": "south", "colour": "grey", "model": "hatch" },
+        { "col": 2, "row": 7, "facing": "north", "colour": "brown", "model": "racer" }
     ],
     "exits": {
         "east": "hill-town",
