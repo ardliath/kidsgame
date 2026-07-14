@@ -4,7 +4,9 @@
         "pasta": { "name": "Pasta", "colour": "#ffd54f", "icon": "pasta", "price": 2 },
         "apple-juice": { "name": "Apple juice", "colour": "#9ccc65", "icon": "carton", "price": 2 },
         "water": { "name": "Water", "colour": "#4fc3f7", "icon": "jug" },
-        "croissant-dough": { "name": "Croissant dough", "colour": "#f5deb3", "icon": "dough", "price": 3 }
+        "croissant-dough": { "name": "Croissant dough", "colour": "#f5deb3", "icon": "dough", "price": 3 },
+        "rice": { "name": "Rice", "colour": "#fafafa", "icon": "rice", "price": 2 },
+        "curry": { "name": "Curry", "colour": "#c65102", "icon": "curry", "price": 2 }
     },
     "recipes": [
         {
@@ -44,6 +46,21 @@
             "steps": [
                 { "type": "fetch", "ingredient": "croissant-dough", "instruction": "Find the croissant dough!" },
                 { "type": "toast", "instruction": "Push the lever to bake it!" }
+            ]
+        },
+        {
+            "id": "curry",
+            "name": "Curry",
+            "result": { "colour": "#c65102", "icon": "bowl" },
+            "requiresCompleted": 2,
+            "steps": [
+                { "type": "fetch", "ingredient": "rice", "instruction": "Find the rice!" },
+                { "type": "add", "ingredient": "rice", "instruction": "Put the rice in the pan!" },
+                { "type": "pour", "ingredient": "water", "into": "pan", "instruction": "Pour in the water!" },
+                { "type": "stir", "stirs": 4, "instruction": "Give it a stir!" },
+                { "type": "fetch", "ingredient": "curry", "instruction": "Find the curry!" },
+                { "type": "add", "ingredient": "curry", "instruction": "Add the curry!" },
+                { "type": "stir", "stirs": 5, "instruction": "Now stir it all together!" }
             ]
         }
     ]
