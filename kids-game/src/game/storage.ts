@@ -17,6 +17,7 @@ const MUTED_KEY = 'kids-game-muted';
 const COMPLETED_RECIPES_KEY = 'kids-game-recipes-done';
 const NAV_TARGET_KEY = 'kids-game-nav-target';
 const DELIVERY_KEY = 'kids-game-delivery';
+const FUEL_KEY = 'kids-game-fuel';
 
 export interface SaveData
 {
@@ -513,6 +514,35 @@ export function saveDelivery (job: DeliveryJob | null)
     catch
     {
         //  Ignore: worst case a job has to be re-generated next session
+    }
+}
+
+//  How full the tank is, from 0 to 1. Drains while actually driving, topped
+//  back up at a petrol station.
+export function loadFuel (): number
+{
+    try
+    {
+        const raw = localStorage.getItem(FUEL_KEY);
+        const n = raw === null ? 1 : parseFloat(raw);
+
+        return isNaN(n) ? 1 : Math.max(0, Math.min(1, n));
+    }
+    catch
+    {
+        return 1;
+    }
+}
+
+export function saveFuel (level: number)
+{
+    try
+    {
+        localStorage.setItem(FUEL_KEY, String(Math.max(0, Math.min(1, level))));
+    }
+    catch
+    {
+        //  Ignore: worst case the tank looks fuller than it should next session
     }
 }
 

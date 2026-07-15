@@ -113,7 +113,7 @@ export function drawTownGrid (scene: Scene, map: MapData, cell: { x: number; y: 
         if (obj.sign)
         {
             //  A shop: emoji marker
-            const emoji = obj.shopType === 'cafe' ? '☕' : obj.shopType === 'treat' ? '🍦' : '🏪';
+            const emoji = obj.shopType === 'cafe' ? '☕' : obj.shopType === 'treat' ? '🍦' : obj.shopType === 'petrol' ? '⛽' : '🏪';
             scene.add.text(cx, cy, emoji, { fontSize: 26 }).setOrigin(0.5);
             markers.push({ obj, cx, cy });
         }

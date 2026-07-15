@@ -42,7 +42,19 @@
             "sign": "SHOP",
             "sells": [ "bread", "pasta", "apple-juice", "croissant-dough", "rice", "curry" ]
         },
-        { "id": "home-clock-tower", "type": "landmark", "kind": "clock-tower", "col": 5, "row": 0 }
+        { "id": "home-clock-tower", "type": "landmark", "kind": "clock-tower", "col": 5, "row": 0 },
+        {
+            "id": "home-petrol",
+            "type": "house",
+            "col": 10,
+            "row": 4,
+            "w": 2,
+            "h": 1,
+            "colour": "grey",
+            "facing": "west",
+            "sign": "PETROL",
+            "shopType": "petrol"
+        }
     ],
     "cars": [
         { "col": 4, "row": 3, "facing": "east", "colour": "blue", "model": "hatch" },

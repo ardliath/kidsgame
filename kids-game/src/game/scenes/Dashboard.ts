@@ -191,7 +191,7 @@ export class Dashboard extends Scene
 
     createDials ()
     {
-        //  Fuel gauge, slowly drains and refills itself; purely for show
+        //  Fuel gauge — Driving drains this while moving, a petrol station refills it
         this.fuelNeedle = this.createDial(790, DIAL_Y, 55, 120, 3, 0);
 
         this.add.text(790 - 30, DIAL_Y + 36, 'E', { fontFamily: 'Arial Black', fontSize: 16, color: '#ef9a9a' }).setOrigin(0.5);
@@ -503,12 +503,12 @@ export class Dashboard extends Scene
 
         this.updateKeyboard(dt);
 
-        //  Speedo tracks the real speed; fuel drains over ten minutes then
-        //  refills; temperature just wobbles around the middle
+        //  Speedo tracks the real speed; fuel tracks the real tank (Driving
+        //  drains it); temperature just wobbles around the middle
         const speed = Phaser.Math.Clamp(((this.registry.get('speed') as number) ?? 0) / SPEEDO_MAX, 0, 1);
         this.speedNeedle.rotation = Phaser.Math.DegToRad(-120 + 240 * speed);
 
-        const fuel = 1 - ((time / 1000) % 600) / 600;
+        const fuel = (this.registry.get('fuel') as number) ?? 1;
         this.fuelNeedle.rotation = Phaser.Math.DegToRad(-60 + 120 * fuel);
 
         this.tempNeedle.rotation = Phaser.Math.DegToRad(12 * Math.sin(time / 2600));

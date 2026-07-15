@@ -6,7 +6,7 @@ import { DeliveriesConfig, DeliveryJob } from '../deliveries';
 import { buildMap, DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch } from '../sfx';
-import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadFleet, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveFleet, saveNavTarget, savePantry, SaveData } from '../storage';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveFleet, saveFuel, saveNavTarget, savePantry, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -18,6 +18,12 @@ const MAX_TURN_RATE = 1.1;
 
 //  Delivery drivers get paid too!
 const DELIVERY_REWARD = 8;
+
+//  Seconds of continuous driving to empty a full tank; below this fraction
+//  remaining, the engine gets sluggish rather than ever cutting out
+const FUEL_DRAIN_SECONDS = 360;
+const FUEL_LOW_THRESHOLD = 0.2;
+const FUEL_LOW_FLOOR = 0.35;
 
 //  NPC traffic: a gentle constant speed, and the four directions they can
 //  choose between at each tile centre
@@ -56,7 +62,8 @@ type ActionTarget =
     { kind: 'shop'; house: PlacedHouse } |
     { kind: 'swap'; model: string; x: number; y: number; heading: number; height: number } |
     { kind: 'pickup'; x: number; y: number; height: number } |
-    { kind: 'deliver'; x: number; y: number; height: number };
+    { kind: 'deliver'; x: number; y: number; height: number } |
+    { kind: 'refuel'; house: PlacedHouse };
 
 interface DrivingData
 {
@@ -111,6 +118,10 @@ export class Driving extends Scene
     //  The active delivery job, if any
     deliveryJob: DeliveryJob | null = null;
 
+    //  Last fuel level actually written to storage, so draining doesn't
+    //  hit localStorage every frame
+    fuelLastSaved = 1;
+
     constructor ()
     {
         super('Driving');
@@ -162,6 +173,13 @@ export class Driving extends Scene
         {
             this.registry.set('coins', loadCoins());
         }
+
+        if (this.registry.get('fuel') === undefined)
+        {
+            this.registry.set('fuel', loadFuel());
+        }
+
+        this.fuelLastSaved = this.registry.get('fuel') as number;
 
         //  Seed his pantry with a small starting stock the very first time,
         //  so his first cook works without a mandatory shop trip. After that
@@ -460,6 +478,15 @@ export class Driving extends Scene
         }
     }
 
+    onRefuel ()
+    {
+        this.registry.set('fuel', 1);
+        saveFuel(1);
+        this.fuelLastSaved = 1;
+
+        this.showToast('Filled up!');
+    }
+
     createActionBubble ()
     {
         this.bubbleBg = this.add.rectangle(0, 0, 170, 56, 0xffeb3b);
@@ -506,6 +533,10 @@ export class Driving extends Scene
             {
                 //  Ordinary houses can be visited
                 consider(house.x, house.y, house.width, house.height, { kind: 'visit', house });
+            }
+            else if (house.shopType === 'petrol')
+            {
+                consider(house.x, house.y, house.width, house.height, { kind: 'refuel', house });
             }
             else if (house.sells && house.sells.length > 0)
             {
@@ -604,6 +635,12 @@ export class Driving extends Scene
                 this.bubbleBg.setStrokeStyle(5, 0x33691e);
                 this.bubbleLabel.setText('DELIVER').setColor('#1b5e20');
             }
+            else if (t.kind === 'refuel')
+            {
+                this.bubbleBg.setFillStyle(0xfff9c4);
+                this.bubbleBg.setStrokeStyle(5, 0xf9a825);
+                this.bubbleLabel.setText('FUEL').setColor('#f57f17');
+            }
             else if (t.house.shopType === 'treat')
             {
                 this.bubbleBg.setFillStyle(0xfce4ec);
@@ -656,6 +693,13 @@ export class Driving extends Scene
         if (target.kind === 'deliver')
         {
             this.onDeliver();
+
+            return;
+        }
+
+        if (target.kind === 'refuel')
+        {
+            this.onRefuel();
 
             return;
         }
@@ -968,11 +1012,18 @@ export class Driving extends Scene
         const steering = (this.registry.get('steering') as number) ?? 0;
         const throttle = (this.registry.get('throttle') as number) ?? 0;
         const gear = (this.registry.get('gear') as number) ?? 1;
+        const fuel = (this.registry.get('fuel') as number) ?? 1;
+
+        //  Running low makes the engine sluggish rather than ever stalling
+        //  him out completely
+        const fuelFactor = fuel < FUEL_LOW_THRESHOLD
+            ? FUEL_LOW_FLOOR + (1 - FUEL_LOW_FLOOR) * (fuel / FUEL_LOW_THRESHOLD)
+            : 1;
 
         //  Gear 1 = forwards, gear 2 = fast, R = backwards
-        const topSpeed = gear === 2 ? 330 : gear === 1 ? 170 : -120;
+        const topSpeed = (gear === 2 ? 330 : gear === 1 ? 170 : -120) * fuelFactor;
         const target = throttle * topSpeed;
-        const rate = throttle > 0 ? 240 : 280;
+        const rate = throttle > 0 ? 240 * fuelFactor : 280;
 
         if (this.speed < target)
         {
@@ -997,6 +1048,19 @@ export class Driving extends Scene
         //  The dashboard speedo reads this
         const speedAbs = Math.abs(this.speed);
         this.registry.set('speed', speedAbs);
+
+        //  The tank only drains while actually driving, not sitting idle
+        if (speedAbs > 20)
+        {
+            const drained = Math.max(0, fuel - dt / FUEL_DRAIN_SECONDS);
+            this.registry.set('fuel', drained);
+
+            if (Math.abs(drained - this.fuelLastSaved) >= 0.01)
+            {
+                saveFuel(drained);
+                this.fuelLastSaved = drained;
+            }
+        }
 
         //  ---- brakes and crunches ----
         this.brakeCooldown = Math.max(0, this.brakeCooldown - dt);

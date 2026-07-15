@@ -27,7 +27,19 @@
             "facing": "south"
         },
         { "id": "cove-plot-1", "type": "site", "col": 5, "row": 8 },
-        { "id": "cove-lighthouse", "type": "landmark", "kind": "lighthouse", "col": 9, "row": 8 }
+        { "id": "cove-lighthouse", "type": "landmark", "kind": "lighthouse", "col": 9, "row": 8 },
+        {
+            "id": "cove-petrol",
+            "type": "house",
+            "col": 4,
+            "row": 1,
+            "w": 2,
+            "h": 1,
+            "colour": "grey",
+            "facing": "west",
+            "sign": "PETROL",
+            "shopType": "petrol"
+        }
     ],
     "cars": [
         { "col": 3, "row": 2, "facing": "south", "colour": "red", "model": "hatch" },

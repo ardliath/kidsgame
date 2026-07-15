@@ -122,6 +122,7 @@ export class MiniMap extends Scene
         this.legendItem(CX - 90, legendY + 34, '🍦', 'Ice cream');
         this.legendItem(CX + 130, legendY + 34, '☕', 'Café');
         this.legendItem(CX - 250, legendY + 68, '🗼', 'Landmark');
+        this.legendItem(CX - 90, legendY + 68, '⛽', 'Petrol');
 
         this.input.keyboard?.on('keydown-ESC', () => this.close());
     }
