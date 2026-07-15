@@ -29,7 +29,8 @@
             "sells": [ "vanilla", "strawberry", "chocolate", "mint" ],
             "shopType": "treat"
         },
-        { "id": "beach-plot-1", "type": "site", "col": 4, "row": 8 }
+        { "id": "beach-plot-1", "type": "site", "col": 4, "row": 8 },
+        { "id": "beach-pier", "type": "landmark", "kind": "pier", "col": 1, "row": 9, "w": 2, "h": 3 }
     ],
     "cars": [
         { "col": 6, "row": 2, "facing": "south", "colour": "blue", "model": "hatch" },

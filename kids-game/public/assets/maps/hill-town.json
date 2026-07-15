@@ -32,7 +32,8 @@
             "sign": "COFFEE",
             "sells": [ "caramel", "vanilla", "chocolate", "strawberry" ],
             "shopType": "cafe"
-        }
+        },
+        { "id": "hill-windmill", "type": "landmark", "kind": "windmill", "col": 10, "row": 0 }
     ],
     "cars": [
         { "col": 5, "row": 2, "facing": "east", "colour": "red", "model": "hatch" },

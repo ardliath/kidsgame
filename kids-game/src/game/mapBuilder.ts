@@ -32,7 +32,7 @@ export interface LegendEntry
 export interface MapObject
 {
     id?: string;
-    type: 'house' | 'site' | 'yard';
+    type: 'house' | 'site' | 'yard' | 'landmark';
     col: number;
     row: number;
     w?: number;
@@ -49,6 +49,10 @@ export interface MapObject
     //  The player's own home: painted his car colour, name over the door,
     //  and never demolished.
     player?: boolean;
+
+    //  Which landmark to draw, when type is 'landmark' — one distinctive,
+    //  solid, non-interactive structure per town
+    kind?: 'clock-tower' | 'windmill' | 'pier' | 'lighthouse';
 }
 
 //  Parked cars: obstacles the player weaves around, drawn with the same
@@ -199,6 +203,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' | 'cafe'; player?: boolean }
     interface SiteSpec { id: string; col: number; row: number; w: number; h: number }
+    interface LandmarkSpec { col: number; row: number; w: number; h: number; kind: 'clock-tower' | 'windmill' | 'pier' | 'lighthouse' }
 
     const builtHouses = loadBuiltHouses();
     const demolished = new Set(loadDemolished());
@@ -206,6 +211,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     const houseSpecs: HouseSpec[] = [];
     const siteSpecs: SiteSpec[] = [];
+    const landmarkSpecs: LandmarkSpec[] = [];
 
     for (let r = 0; r < rows; r++)
     {
@@ -240,6 +246,10 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         else if (obj.type === 'yard')
         {
             yardObj = obj;
+        }
+        else if (obj.type === 'landmark' && obj.kind)
+        {
+            landmarkSpecs.push({ col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1, kind: obj.kind });
         }
 
     });
@@ -333,6 +343,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     for (const spec of houseSpecs) markFootprint(spec.col, spec.row, spec.w, spec.h);
     for (const spec of siteSpecs) markFootprint(spec.col, spec.row, spec.w, spec.h);
+    for (const spec of landmarkSpecs) markFootprint(spec.col, spec.row, spec.w, spec.h);
 
     //  Keep the auto-site system away from the yard's footprint
     if (yardObj)
@@ -577,6 +588,98 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         sites.push({ id, x: sx, y: sy, width: sw, height: sh });
     };
 
+    //  One distinctive, solid, non-interactive structure per town. Each
+    //  kind's main body becomes the physics obstacle (same one-shape-solid
+    //  pattern as trees); everything else layered on top is purely visual.
+    const placeLandmark = (col: number, row: number, w: number, h: number, kind: LandmarkSpec['kind']) => {
+
+        const cx = (col + w / 2) * TILE;
+        const cy = (row + h / 2) * TILE;
+
+        if (kind === 'clock-tower')
+        {
+            const body = scene.add.rectangle(cx, cy + 20, 70, 130, 0x90a4ae);
+            body.setStrokeStyle(4, 0x546e7a);
+            solid(body);
+
+            //  Roof: local points non-negative, so the shape's origin is its
+            //  own bounding-box centre — offsetting y here lands its flat
+            //  bottom edge exactly on the body's top edge
+            const roof = scene.add.triangle(cx, cy - 70, 0, 50, 90, 50, 45, 0, 0x795548);
+            roof.setStrokeStyle(3, 0x4e342e);
+
+            scene.add.circle(cx, cy - 35, 26, 0xffffff).setStrokeStyle(4, 0x263238);
+            scene.add.rectangle(cx, cy - 44, 4, 14, 0x263238);
+            scene.add.rectangle(cx + 6, cy - 35, 14, 4, 0x263238);
+        }
+        else if (kind === 'windmill')
+        {
+            const body = scene.add.rectangle(cx, cy + 40, 56, 120, 0xefebe9);
+            body.setStrokeStyle(4, 0xbcaaa4);
+            solid(body);
+
+            const hub = scene.add.circle(0, 0, 11, 0x5d4037);
+            const parts: Phaser.GameObjects.GameObject[] = [ hub ];
+
+            for (const angle of [ 0, 90 ])
+            {
+                const blade = scene.add.rectangle(0, 0, 16, 100, 0xd84315);
+                blade.setStrokeStyle(2, 0x8d2f0f);
+                blade.setRotation(Phaser.Math.DegToRad(angle));
+                parts.push(blade);
+            }
+
+            //  A slow continuous spin, matching the game's small delight
+            //  touches (bouncing labels, wobbling gauges)
+            const spinner = scene.add.container(cx, cy - 60, parts);
+            scene.tweens.add({ targets: spinner, angle: 360, duration: 8000, repeat: -1, ease: 'Linear' });
+        }
+        else if (kind === 'pier')
+        {
+            const pw = w * TILE - 40;
+            const ph = h * TILE - 20;
+
+            const deck = scene.add.rectangle(cx, cy, pw, ph, 0x8d6e63);
+            deck.setStrokeStyle(4, 0x5d4037);
+            solid(deck);
+
+            for (let i = 1; i < h; i++)
+            {
+                scene.add.rectangle(cx, row * TILE + i * TILE, pw - 10, 6, 0x5d4037);
+            }
+
+            scene.add.rectangle(cx - pw / 2 + 8, cy, 6, ph, 0x6d4c41);
+            scene.add.rectangle(cx + pw / 2 - 8, cy, 6, ph, 0x6d4c41);
+        }
+        else if (kind === 'lighthouse')
+        {
+            const stripeH = 26;
+            const stripeColours = [ 0xef5350, 0xffffff, 0xef5350, 0xffffff ];
+
+            stripeColours.forEach((colour, i) => {
+
+                const sy = cy + 50 - i * stripeH;
+                const stripe = scene.add.rectangle(cx, sy, 50 - i * 4, stripeH, colour);
+                stripe.setStrokeStyle(2, 0x263238);
+
+                if (i === stripeColours.length - 1)
+                {
+                    solid(stripe);
+                }
+
+            });
+
+            const lanternY = cy + 50 - stripeColours.length * stripeH - 14;
+            scene.add.rectangle(cx, lanternY, 30, 24, 0x37474f);
+
+            //  A slow blinking beacon
+            const light = scene.add.circle(cx, lanternY - 4, 10, 0xffeb3b);
+            scene.tweens.add({ targets: light, alpha: 0.35, duration: 900, yoyo: true, repeat: -1 });
+
+            scene.add.ellipse(cx, lanternY - 20, 34, 14, 0x37474f);
+        }
+    };
+
     //  Draw everything the data pass decided on
     for (const spec of houseSpecs)
     {
@@ -596,6 +699,11 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         {
             placeSite(spec.id, spec.col, spec.row, spec.w, spec.h);
         }
+    }
+
+    for (const spec of landmarkSpecs)
+    {
+        placeLandmark(spec.col, spec.row, spec.w, spec.h, spec.kind);
     }
 
     //  Cars scattered along the roads. They drive themselves once the scene
@@ -632,6 +740,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     const yard = yardObj ? drawYard(scene, yardObj, tileAt) : null;
 
     buildEdgeWalls(scene, map, obstacles, cols, rows);
+    drawSignposts(scene, map, cols, rows);
 
     const start = map.start
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
@@ -752,4 +861,85 @@ function buildEdgeWalls (scene: Scene, map: MapData, obstacles: Phaser.Physics.A
     buildEdge(cols, c => map.tiles[rows - 1][c] === 'R' && !!map.exits?.south, (center, length) => addWall(center, height, length, 60));
     buildEdge(rows, r => map.tiles[r][0] === 'R' && !!map.exits?.west, (center, length) => addWall(0, center, 60, length));
     buildEdge(rows, r => map.tiles[r][cols - 1] === 'R' && !!map.exits?.east, (center, length) => addWall(width, center, 60, length));
+}
+
+//  A small sign naming the town on the other side of each exit, derived
+//  entirely from map.exits and the road gap in the edge wall — no JSON
+//  authoring needed. Purely decorative, never added to obstacles, so it
+//  can never block the exit it's labelling.
+function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number)
+{
+    if (!map.exits)
+    {
+        return;
+    }
+
+    const placeSignpost = (x: number, y: number, targetId: string) => {
+
+        const targetData = scene.cache.json.get(mapCacheKey(targetId)) as MapData | undefined;
+        const label = targetData?.name ?? targetId;
+
+        scene.add.rectangle(x, y, 10, 56, 0x795548).setStrokeStyle(2, 0x4e342e);
+
+        const board = scene.add.rectangle(x, y - 46, 150, 42, 0xfff3e0);
+        board.setStrokeStyle(4, 0x5d4037);
+
+        scene.add.text(x, y - 46, `→ ${label}`, {
+            fontFamily: 'Arial Black', fontSize: 18, color: '#3e2723'
+        }).setOrigin(0.5);
+    };
+
+    //  The single tile index along an edge where a road actually crosses it
+    const findGapIndex = (length: number, tileAt: (i: number) => string): number | null => {
+
+        for (let i = 0; i < length; i++)
+        {
+            if (tileAt(i) === 'R')
+            {
+                return i;
+            }
+        }
+
+        return null;
+    };
+
+    if (map.exits.north)
+    {
+        const gap = findGapIndex(cols, c => map.tiles[0][c]);
+
+        if (gap !== null)
+        {
+            placeSignpost((gap + 1.6) * TILE, TILE * 0.55, map.exits.north);
+        }
+    }
+
+    if (map.exits.south)
+    {
+        const gap = findGapIndex(cols, c => map.tiles[rows - 1][c]);
+
+        if (gap !== null)
+        {
+            placeSignpost((gap + 1.6) * TILE, (rows - 1) * TILE + TILE * 0.45, map.exits.south);
+        }
+    }
+
+    if (map.exits.west)
+    {
+        const gap = findGapIndex(rows, r => map.tiles[r][0]);
+
+        if (gap !== null)
+        {
+            placeSignpost(TILE * 0.55, (gap + 1.6) * TILE, map.exits.west);
+        }
+    }
+
+    if (map.exits.east)
+    {
+        const gap = findGapIndex(rows, r => map.tiles[r][cols - 1]);
+
+        if (gap !== null)
+        {
+            placeSignpost((cols - 1) * TILE + TILE * 0.45, (gap + 1.6) * TILE, map.exits.east);
+        }
+    }
 }

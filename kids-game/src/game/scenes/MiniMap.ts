@@ -71,9 +71,9 @@ export class MiniMap extends Scene
         //  Panel behind the whole thing
         const panel = this.add.graphics();
         panel.fillStyle(0x263238, 1);
-        panel.fillRoundedRect(originX - 40, 120, totalW + 80, totalH + 190, 24);
+        panel.fillRoundedRect(originX - 40, 120, totalW + 80, totalH + 230, 24);
         panel.lineStyle(6, 0x102027, 1);
-        panel.strokeRoundedRect(originX - 40, 120, totalW + 80, totalH + 190, 24);
+        panel.strokeRoundedRect(originX - 40, 120, totalW + 80, totalH + 230, 24);
 
         this.add.text(CX, 168, 'Map', {
             fontFamily: 'Arial Black', fontSize: 40, color: '#ffffff'
@@ -105,7 +105,7 @@ export class MiniMap extends Scene
         this.drawFleet(maps, cellOf);
         this.drawPlayer(maps, cellOf, currentMap);
 
-        //  Legend, over two rows
+        //  Legend, over three rows
         const legendY = originY + totalH + 46;
         this.legendItem(CX - 250, legendY, '🚗', 'You');
         this.legendItem(CX - 90, legendY, '🚙', 'Your cars');
@@ -113,6 +113,7 @@ export class MiniMap extends Scene
         this.legendItem(CX - 250, legendY + 34, '🏪', 'Shop');
         this.legendItem(CX - 90, legendY + 34, '🍦', 'Ice cream');
         this.legendItem(CX + 130, legendY + 34, '☕', 'Café');
+        this.legendItem(CX - 250, legendY + 68, '🗼', 'Landmark');
 
         this.input.keyboard?.on('keydown-ESC', () => this.close());
     }
@@ -197,6 +198,15 @@ export class MiniMap extends Scene
             else if (obj.type === 'house')
             {
                 this.add.rectangle(cx, cy, (obj.w ?? 1) * TILE_PX - 4, (obj.h ?? 1) * TILE_PX - 4, 0xc8a878);
+            }
+            else if (obj.type === 'landmark')
+            {
+                const emoji = obj.kind === 'clock-tower' ? '🕰️'
+                    : obj.kind === 'windmill' ? '🎡'
+                    : obj.kind === 'pier' ? '⚓'
+                    : '🗼';
+
+                this.add.text(cx, cy, emoji, { fontSize: 22 }).setOrigin(0.5);
             }
         });
 
