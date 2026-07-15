@@ -148,19 +148,21 @@ export class Builder extends Scene
             for (let col = 0; col < DIG_GRID; col++)
             {
                 const border = row === 0 || row === DIG_GRID - 1 || col === 0 || col === DIG_GRID - 1;
+
+                if (!border)
+                {
+                    //  Just untouched lawn — no outline, so it doesn't look
+                    //  tappable next to the trench ring that actually is
+                    continue;
+                }
+
                 const x = left + col * DIG_TILE + DIG_TILE / 2;
                 const y = top + row * DIG_TILE + DIG_TILE / 2;
 
                 const rect = this.add.rectangle(x, y, DIG_TILE - 6, DIG_TILE - 6, 0x7cb342);
                 rect.setStrokeStyle(3, 0x33691e);
-                this.allDigRects.push(rect);
-
-                if (!border)
-                {
-                    continue;
-                }
-
                 rect.setInteractive();
+                this.allDigRects.push(rect);
 
                 const tile: DirtTile = { rect, dug: false };
                 this.dirtTiles.push(tile);
