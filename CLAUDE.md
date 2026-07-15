@@ -1,61 +1,45 @@
 # Kids Driving Game
 
-A top-down 2D driving game built for the user's young son, using Phaser 4 + Vite + TypeScript.
-He drives a car around a small connected world of towns, builds houses, visits
-them, cooks in their kitchens, and shops. Designed for iPad landscape and
-touch-first, with keyboard as a secondary input for desktop testing.
+A top-down 2D driving game for the user's young son (Phaser 4 + Vite +
+TypeScript). He drives around a small connected world of towns, builds and
+visits houses, cooks, and shops. Built for iPad landscape, touch-first;
+keyboard is a secondary desktop-testing input.
 
 ## Where things live
 
-- The actual game is in `kids-game/` (a standard Phaser Vite-TS template) — that's
-  where you run `npm run dev`, not the repo root.
+- The game is in `kids-game/` — run `npm run dev` there, not the repo root.
 - Game code: `kids-game/src/game/`. Scenes: `kids-game/src/game/scenes/`.
 - Content is JSON, not hardcoded: town maps (`public/assets/maps/*.json`),
-  cooking (`public/assets/recipes.json`), ice cream (`public/assets/icecream.json`).
-  See the relevant skill before hand-editing these — each has a schema.
-- Persistence: everything the player does (built houses, coins, pantry
-  stock, fleet, car colour, name, current map, visited houses) is saved
-  through helpers in `storage.ts`, not raw `localStorage` calls elsewhere.
+  cooking (`recipes.json`), ice cream (`icecream.json`). Check the relevant
+  skill before hand-editing these.
+- Persistence goes through `storage.ts` helpers, never raw `localStorage`
+  calls elsewhere.
 
 ## How the game is put together
 
-- `Driving` is the main scene: the car, the town, the camera. `Dashboard` runs
-  alongside it (wheel, pedal, gear stick, coin HUD, cog, map button).
-- Everything else — Builder, Cooking, Shop, IceCream, Interior, Options,
-  MiniMap — is a **paused-parent mini-game scene**: it launches on top of
-  Driving/Dashboard, pauses them, and resumes+stops itself on exit. See the
-  mini-game-scenes skill before adding a new one — the pattern is consistent
-  and worth reusing rather than reinventing.
-- Towns connect to each other via matching exits/roads at their edges; the
-  world loops rather than being one giant map.
+- `Driving` is the main scene (car, town, camera); `Dashboard` runs
+  alongside it (wheel, pedal, gear stick, HUD, cog, map button).
+- Everything else is a **paused-parent mini-game scene**: launches on top
+  of Driving/Dashboard, pauses them, resumes+stops itself on exit. See the
+  mini-game-scenes skill before adding a new one.
+- Towns connect via matching exits/roads at their edges; the world loops
+  rather than being one giant map.
 
 ## Working conventions
 
-- Verify changes in the browser preview before calling anything done — this is
-  a real, played game, not just code that type-checks. Use the preview tools,
-  not curl/Bash, for anything visual.
+- Verify changes in the browser preview before calling anything done.
 - The user handles git himself — never commit or push unless he explicitly
   asks in that message.
-- No comments explaining *what* code does; only the occasional one for a
-  non-obvious *why* (matches the rest of the codebase's style).
-- Don't add features he hasn't asked for. He drives this project one small
-  ask at a time — match that scope, don't anticipate.
+- No comments explaining *what* code does; only the occasional *why*.
+- Don't add features he hasn't asked for — match his scope exactly.
 
-## Known Phaser gotchas
+## Known Phaser gotcha
 
-- **`add.triangle(x, y, x1, y1, x2, y2, x3, y3, ...)` miscalculates its
-  origin if any of the three points is negative** — the shape renders
-  offset from where `(x, y)` says it should be, while everything else
-  (circles, rectangles) at the same position is fine. This has bitten a
-  car's nose and an ice cream cone/hat already. Fix: translate the three
-  points so all are ≥ 0 (shift by the negative of whatever the minimum
-  x/y was), leave the `(x, y)` position argument unchanged. If a shape
-  drawn with a triangle looks subtly off-centre or detached from
-  neighbouring shapes, check this first before assuming the position math
-  is wrong.
+`add.triangle(x, y, x1, y1, x2, y2, x3, y3)` miscentres if any point is
+negative (has bitten a car nose, an ice cream cone, a builder's roof). Fix:
+shift all three points so the minimum is ≥ 0; leave `(x, y)` alone.
 
 ## Skills
 
-Look for and use project skills for the areas they cover (adding maps/towns,
-recipes, mini-game scenes, etc.) rather than re-deriving the pattern from
-scratch each time.
+Use project skills for the areas they cover rather than re-deriving the
+pattern from scratch.
