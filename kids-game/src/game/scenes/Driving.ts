@@ -25,6 +25,10 @@ const FUEL_DRAIN_SECONDS = 360;
 const FUEL_LOW_THRESHOLD = 0.2;
 const FUEL_LOW_FLOOR = 0.35;
 
+//  Cost of a full tank; a part-fill costs proportionally less, with a
+//  minimum of 1 coin so topping up is never free
+const FUEL_FULL_PRICE = 10;
+
 //  NPC traffic: a gentle constant speed, and the four directions they can
 //  choose between at each tile centre
 const NPC_SPEED = 80;
@@ -174,11 +178,10 @@ export class Driving extends Scene
             this.registry.set('coins', loadCoins());
         }
 
-        if (this.registry.get('fuel') === undefined)
-        {
-            this.registry.set('fuel', loadFuel());
-        }
-
+        //  Each vehicle has its own tank, and the outgoing one is always
+        //  flushed to storage on shutdown below, so it's safe to always
+        //  reload here rather than only on first boot
+        this.registry.set('fuel', loadFuel(this.registry.get('carModel') as string));
         this.fuelLastSaved = this.registry.get('fuel') as number;
 
         //  Seed his pantry with a small starting stock the very first time,
@@ -258,6 +261,10 @@ export class Driving extends Scene
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.registry.events.off('changedata-carColour', this.restyleCar, this);
             this.registry.events.off('changedata-carModel', this.restyleCar, this);
+
+            //  Flush the outgoing vehicle's tank so the next create() (a new
+            //  town, or a different vehicle entirely) reads an up-to-date value
+            saveFuel(this.registry.get('carModel') as string, (this.registry.get('fuel') as number) ?? 1);
         });
 
         const cam = this.cameras.main;
@@ -480,11 +487,36 @@ export class Driving extends Scene
 
     onRefuel ()
     {
+        const fuel = (this.registry.get('fuel') as number) ?? 1;
+
+        if (fuel >= 1)
+        {
+            this.showToast('Already full!');
+
+            return;
+        }
+
+        const cost = Math.max(1, Math.ceil(FUEL_FULL_PRICE * (1 - fuel)));
+        const coins = (this.registry.get('coins') as number) ?? 0;
+
+        if (coins < cost)
+        {
+            this.showToast('Not enough coins!');
+
+            return;
+        }
+
+        const newCoins = coins - cost;
+        this.registry.set('coins', newCoins);
+        saveCoins(newCoins);
+
+        const model = this.registry.get('carModel') as string;
+
         this.registry.set('fuel', 1);
-        saveFuel(1);
+        saveFuel(model, 1);
         this.fuelLastSaved = 1;
 
-        this.showToast('Filled up!');
+        this.showToast(`Filled up! -${cost} coins`);
     }
 
     createActionBubble ()
@@ -1057,7 +1089,7 @@ export class Driving extends Scene
 
             if (Math.abs(drained - this.fuelLastSaved) >= 0.01)
             {
-                saveFuel(drained);
+                saveFuel(this.registry.get('carModel') as string, drained);
                 this.fuelLastSaved = drained;
             }
         }

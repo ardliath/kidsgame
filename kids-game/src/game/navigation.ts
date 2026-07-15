@@ -9,7 +9,7 @@ export interface NavDestination
     mapId: string;
     x: number;
     y: number;
-    type: 'yard' | 'shop' | 'landmark';
+    type: 'yard' | 'shop' | 'landmark' | 'petrol';
 }
 
 const SHOP_NAME: Record<string, string> = {
@@ -41,6 +41,10 @@ export function listKnownDestinations (allMaps: Record<string, MapData>): NavDes
             if (obj.type === 'yard')
             {
                 found.push({ id: obj.id ?? `${map.id}-yard`, name: 'Yard', mapId: map.id, x, y, type: 'yard' });
+            }
+            else if (obj.shopType === 'petrol')
+            {
+                found.push({ id: obj.id ?? `${map.id}-petrol-${obj.col}x${obj.row}`, name: `${map.name} Petrol`, mapId: map.id, x, y, type: 'petrol' });
             }
             else if (obj.sign && obj.sells && obj.sells.length > 0)
             {

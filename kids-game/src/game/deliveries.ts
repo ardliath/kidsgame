@@ -46,14 +46,17 @@ export interface DeliveryJob
 }
 
 //  Every shop across all towns — reuses the GPS's destination list rather
-//  than re-deriving what counts as a shop
+//  than re-deriving what counts as a shop. Petrol stations are their own
+//  `type: 'petrol'` in that list specifically so they're never picked up
+//  here — a delivery job starting or ending at a pump wouldn't make sense.
 export function enumerateShops (allMaps: Record<string, MapData>)
 {
     return listKnownDestinations(allMaps).filter(d => d.type === 'shop');
 }
 
 //  Every landmark, explicitly-placed house (no sign, not the player's own),
-//  and plain-grid house, across all towns
+//  and plain-grid house, across all towns. Signed buildings — shops and
+//  petrol stations alike — are deliberately excluded below.
 export function enumerateDropoffs (allMaps: Record<string, MapData>): DropoffDestination[]
 {
     const found: DropoffDestination[] = [];

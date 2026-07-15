@@ -517,16 +517,17 @@ export function saveDelivery (job: DeliveryJob | null)
     }
 }
 
-//  How full the tank is, from 0 to 1. Drains while actually driving, topped
-//  back up at a petrol station.
-export function loadFuel (): number
+//  How full each vehicle's tank is, from 0 to 1 — one tank per model, since
+//  swapping vehicles at the yard shouldn't carry fuel over between them.
+//  Drains while actually driving, topped back up at a petrol station.
+export function loadFuel (model: string): number
 {
     try
     {
-        const raw = localStorage.getItem(FUEL_KEY);
-        const n = raw === null ? 1 : parseFloat(raw);
+        const all = JSON.parse(localStorage.getItem(FUEL_KEY) ?? '{}') as Record<string, number>;
+        const n = all[model];
 
-        return isNaN(n) ? 1 : Math.max(0, Math.min(1, n));
+        return typeof n === 'number' && !isNaN(n) ? Math.max(0, Math.min(1, n)) : 1;
     }
     catch
     {
@@ -534,11 +535,13 @@ export function loadFuel (): number
     }
 }
 
-export function saveFuel (level: number)
+export function saveFuel (model: string, level: number)
 {
     try
     {
-        localStorage.setItem(FUEL_KEY, String(Math.max(0, Math.min(1, level))));
+        const all = JSON.parse(localStorage.getItem(FUEL_KEY) ?? '{}') as Record<string, number>;
+        all[model] = Math.max(0, Math.min(1, level));
+        localStorage.setItem(FUEL_KEY, JSON.stringify(all));
     }
     catch
     {
