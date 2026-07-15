@@ -2,10 +2,11 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
+import { DeliveriesConfig, DeliveryJob } from '../deliveries';
 import { buildMap, DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch } from '../sfx';
-import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, loadNavTarget, NavTarget, pantryExists, saveCurrentMap, saveFleet, saveNavTarget, savePantry, SaveData } from '../storage';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadFleet, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveFleet, saveNavTarget, savePantry, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -14,6 +15,9 @@ import { Dashboard } from './Dashboard';
 //  corner feels — keep that above ~half a tile or it starts to spin in place.
 const GRIP_SPEED = 130;
 const MAX_TURN_RATE = 1.1;
+
+//  Delivery drivers get paid too!
+const DELIVERY_REWARD = 8;
 
 //  NPC traffic: a gentle constant speed, and the four directions they can
 //  choose between at each tile centre
@@ -44,12 +48,15 @@ interface EntryState
 }
 
 //  What the pop-up bubble beside the car offers: building on a plot,
-//  visiting a house, going into a shop, or swapping into a parked vehicle
+//  visiting a house, going into a shop, swapping into a parked vehicle, or
+//  picking up/delivering the active delivery job
 type ActionTarget =
     { kind: 'build'; site: PlacedSite } |
     { kind: 'visit'; house: PlacedHouse } |
     { kind: 'shop'; house: PlacedHouse } |
-    { kind: 'swap'; model: string; x: number; y: number; heading: number; height: number };
+    { kind: 'swap'; model: string; x: number; y: number; heading: number; height: number } |
+    { kind: 'pickup'; x: number; y: number; height: number } |
+    { kind: 'deliver'; x: number; y: number; height: number };
 
 interface DrivingData
 {
@@ -101,6 +108,9 @@ export class Driving extends Scene
     compassNeedle: Phaser.GameObjects.Container;
     compassLabel: Phaser.GameObjects.Text;
 
+    //  The active delivery job, if any
+    deliveryJob: DeliveryJob | null = null;
+
     constructor ()
     {
         super('Driving');
@@ -118,6 +128,7 @@ export class Driving extends Scene
         this.transitioning = false;
 
         this.navTarget = loadNavTarget();
+        this.deliveryJob = loadDelivery();
         this.allMaps = {};
 
         for (const id of MAP_IDS)
@@ -351,13 +362,7 @@ export class Driving extends Scene
     {
         const name = this.navTarget?.name ?? 'your destination';
         this.clearNavTarget();
-
-        const toast = this.add.text(GAME_WIDTH / 2, 110, `You made it to ${name}!`, {
-            fontFamily: 'Arial Black', fontSize: 26, color: '#ffeb3b',
-            stroke: '#000000', strokeThickness: 5
-        }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
-
-        this.tweens.add({ targets: toast, alpha: 0, delay: 1400, duration: 500, onComplete: () => toast.destroy() });
+        this.showToast(`You made it to ${name}!`);
     }
 
     setNavTarget (target: NavTarget)
@@ -371,6 +376,88 @@ export class Driving extends Scene
         this.navTarget = null;
         saveNavTarget(null);
         this.compassContainer.setVisible(false);
+    }
+
+    showToast (text: string)
+    {
+        const toast = this.add.text(GAME_WIDTH / 2, 110, text, {
+            fontFamily: 'Arial Black', fontSize: 26, color: '#ffeb3b',
+            stroke: '#000000', strokeThickness: 5
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+
+        this.tweens.add({ targets: toast, alpha: 0, delay: 1400, duration: 500, onComplete: () => toast.destroy() });
+    }
+
+    //  Sets (or clears) the active delivery job, persists it, and points the
+    //  compass at whatever's next: the pickup shop once accepted, the
+    //  drop-off once carrying, or nothing once it's done
+    setDeliveryJob (job: DeliveryJob | null)
+    {
+        this.deliveryJob = job;
+        saveDelivery(job);
+
+        if (job && job.state === 'accepted')
+        {
+            this.setNavTarget({ id: job.pickupId, name: job.pickupName, mapId: job.pickupMapId, x: job.pickupX, y: job.pickupY });
+        }
+        else if (job && job.state === 'carrying')
+        {
+            this.setNavTarget({ id: job.dropoffId, name: job.dropoffName, mapId: job.dropoffMapId, x: job.dropoffX, y: job.dropoffY });
+        }
+    }
+
+    parcelName (parcelId: string): string
+    {
+        const config = this.cache.json.get('deliveries') as DeliveriesConfig | undefined;
+
+        return config?.parcels.find(p => p.id === parcelId)?.name ?? 'parcel';
+    }
+
+    onPickup ()
+    {
+        const job = this.deliveryJob;
+
+        if (!job)
+        {
+            return;
+        }
+
+        this.setDeliveryJob({ ...job, state: 'carrying' });
+        this.showToast(`Picked up the ${this.parcelName(job.parcelId)}!`);
+    }
+
+    onDeliver ()
+    {
+        const job = this.deliveryJob;
+
+        if (!job)
+        {
+            return;
+        }
+
+        const coins = ((this.registry.get('coins') as number) ?? 0) + DELIVERY_REWARD;
+        this.registry.set('coins', coins);
+        saveCoins(coins);
+
+        this.setDeliveryJob(null);
+        this.clearNavTarget();
+        this.showToast(`Delivered! +${DELIVERY_REWARD} coins`);
+
+        for (let i = 0; i < 8; i++)
+        {
+            const angle = (i / 8) * Math.PI * 2;
+            const star = this.add.circle(this.car.x, this.car.y, 9, [ 0xffeb3b, 0xff7043, 0x4dd0e1, 0xaed581 ][i % 4]);
+
+            this.tweens.add({
+                targets: star,
+                x: this.car.x + Math.cos(angle) * 90,
+                y: this.car.y + Math.sin(angle) * 90,
+                alpha: 0,
+                duration: 700,
+                ease: 'Cubic.Out',
+                onComplete: () => star.destroy()
+            });
+        }
     }
 
     createActionBubble ()
@@ -433,8 +520,38 @@ export class Driving extends Scene
             consider(parked.x, parked.y, 68, 68, { kind: 'swap', model: parked.model, x: parked.x, y: parked.y, heading: parked.heading, height: 68 });
         }
 
+        //  A pickup/deliver spot is often the exact same building as a shop
+        //  or house (e.g. picking up from a café you could otherwise browse)
+        //  — checked separately, and given first claim on `best` below, so it
+        //  always wins that tie rather than losing to whichever happened to
+        //  be pushed into `candidates` first.
+        const job = this.deliveryJob;
+        const currentMapId = this.registry.get('mapId') as string;
+        let deliveryCandidate: { distance: number; target: ActionTarget } | null = null;
+
+        if (job && job.state === 'accepted' && job.pickupMapId === currentMapId)
+        {
+            const dx = Math.max(Math.abs(this.car.x - job.pickupX) - 80, 0);
+            const dy = Math.max(Math.abs(this.car.y - job.pickupY) - 80, 0);
+
+            deliveryCandidate = { distance: Math.hypot(dx, dy), target: { kind: 'pickup', x: job.pickupX, y: job.pickupY, height: 160 } };
+        }
+        else if (job && job.state === 'carrying' && job.dropoffMapId === currentMapId)
+        {
+            const dx = Math.max(Math.abs(this.car.x - job.dropoffX) - 80, 0);
+            const dy = Math.max(Math.abs(this.car.y - job.dropoffY) - 80, 0);
+
+            deliveryCandidate = { distance: Math.hypot(dx, dy), target: { kind: 'deliver', x: job.dropoffX, y: job.dropoffY, height: 160 } };
+        }
+
         let best: ActionTarget | null = null;
         let bestDistance = 120;
+
+        if (deliveryCandidate && deliveryCandidate.distance < bestDistance)
+        {
+            best = deliveryCandidate.target;
+            bestDistance = deliveryCandidate.distance;
+        }
 
         for (const candidate of candidates)
         {
@@ -453,7 +570,9 @@ export class Driving extends Scene
         if (this.bubbleTarget)
         {
             const t = this.bubbleTarget;
-            const at = t.kind === 'build' ? t.site : t.kind === 'swap' ? t : t.house;
+            const at = t.kind === 'build' ? t.site
+                : (t.kind === 'swap' || t.kind === 'pickup' || t.kind === 'deliver') ? t
+                : t.house;
 
             if (t.kind === 'build')
             {
@@ -472,6 +591,18 @@ export class Driving extends Scene
                 this.bubbleBg.setFillStyle(0xffe0b2);
                 this.bubbleBg.setStrokeStyle(5, 0xe65100);
                 this.bubbleLabel.setText('DRIVE').setColor('#e65100');
+            }
+            else if (t.kind === 'pickup')
+            {
+                this.bubbleBg.setFillStyle(0xffccbc);
+                this.bubbleBg.setStrokeStyle(5, 0xbf360c);
+                this.bubbleLabel.setText('PICKUP').setColor('#bf360c');
+            }
+            else if (t.kind === 'deliver')
+            {
+                this.bubbleBg.setFillStyle(0xc5e1a5);
+                this.bubbleBg.setStrokeStyle(5, 0x33691e);
+                this.bubbleLabel.setText('DELIVER').setColor('#1b5e20');
             }
             else if (t.house.shopType === 'treat')
             {
@@ -506,11 +637,25 @@ export class Driving extends Scene
         const dashboard = this.scene.get('Dashboard') as Dashboard;
         dashboard.releaseControls();
 
-        //  Swapping happens in place — it restarts Driving rather than opening
-        //  a mini-game scene, so handle it before the pause/launch below
+        //  Swapping, picking up and delivering all happen in place — driving
+        //  never pauses for them, so handle them before the pause/launch below
         if (target.kind === 'swap')
         {
             this.swapIntoVehicle(target);
+
+            return;
+        }
+
+        if (target.kind === 'pickup')
+        {
+            this.onPickup();
+
+            return;
+        }
+
+        if (target.kind === 'deliver')
+        {
+            this.onDeliver();
 
             return;
         }
