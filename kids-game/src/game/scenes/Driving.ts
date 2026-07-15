@@ -2,9 +2,10 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
-import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
+import { buildMap, DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
+import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch } from '../sfx';
-import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, pantryExists, saveCurrentMap, saveFleet, savePantry, SaveData } from '../storage';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, loadNavTarget, NavTarget, pantryExists, saveCurrentMap, saveFleet, saveNavTarget, savePantry, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -91,6 +92,15 @@ export class Driving extends Scene
     transitioning = false;
     sceneData: DrivingData = {};
 
+    //  The GPS: where the compass is currently pointing, and every town's
+    //  data (already preloaded) so cross-town direction-finding works
+    //  without needing to load anything
+    navTarget: NavTarget | null = null;
+    allMaps: Record<string, MapData> = {};
+    compassContainer: Phaser.GameObjects.Container;
+    compassNeedle: Phaser.GameObjects.Container;
+    compassLabel: Phaser.GameObjects.Text;
+
     constructor ()
     {
         super('Driving');
@@ -106,6 +116,19 @@ export class Driving extends Scene
         this.speed = this.sceneData.entry?.speed ?? 0;
         this.heading = this.sceneData.entry?.heading ?? 0;
         this.transitioning = false;
+
+        this.navTarget = loadNavTarget();
+        this.allMaps = {};
+
+        for (const id of MAP_IDS)
+        {
+            const data = this.cache.json.get(mapCacheKey(id)) as MapData | undefined;
+
+            if (data)
+            {
+                this.allMaps[id] = data;
+            }
+        }
 
         //  First boot only — map changes keep whatever the player was doing
         if (this.registry.get('gear') === undefined)
@@ -223,6 +246,7 @@ export class Driving extends Scene
         this.tweens.add({ targets: label, alpha: 0, delay: 1500, duration: 500 });
 
         this.createCoinHud();
+        this.createCompassHud();
 
         this.createActionBubble();
 
@@ -262,6 +286,91 @@ export class Driving extends Scene
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.registry.events.off('changedata-coins', onCoins);
         });
+    }
+
+    //  The GPS compass: a fixed dial, top-centre, whose needle rotates to
+    //  point at the current nav target — same-town bearing, or the exit
+    //  direction to head toward if the target's town isn't the current one.
+    //  Hidden whenever there's no active target.
+    createCompassHud ()
+    {
+        const bg = this.add.circle(0, 0, 34, 0x102027, 0.75);
+        bg.setStrokeStyle(3, 0xffd54f);
+
+        const needle = this.add.rectangle(0, -14, 6, 28, 0xff7043);
+        this.compassNeedle = this.add.container(0, 0, [ needle ]);
+
+        const hub = this.add.circle(0, 0, 6, 0xcfd8dc);
+
+        this.compassLabel = this.add.text(0, 46, '', {
+            fontFamily: 'Arial Black', fontSize: 16, color: '#ffffff',
+            stroke: '#000000', strokeThickness: 4
+        }).setOrigin(0.5);
+
+        this.compassContainer = this.add.container(GAME_WIDTH / 2, 60, [ bg, this.compassNeedle, hub, this.compassLabel ]);
+        this.compassContainer.setScrollFactor(0);
+        this.compassContainer.setDepth(200);
+        this.compassContainer.setVisible(false);
+    }
+
+    updateCompass ()
+    {
+        if (!this.navTarget)
+        {
+            this.compassContainer.setVisible(false);
+
+            return;
+        }
+
+        const currentMapId = this.registry.get('mapId') as string;
+
+        if (this.navTarget.mapId === currentMapId)
+        {
+            const dist = Phaser.Math.Distance.Between(this.car.x, this.car.y, this.navTarget.x, this.navTarget.y);
+
+            if (dist < 120)
+            {
+                this.arriveAtNavTarget();
+
+                return;
+            }
+
+            this.compassNeedle.rotation = bearingTo(this.car.x, this.car.y, this.navTarget.x, this.navTarget.y);
+        }
+        else
+        {
+            const hop = findNextHop(currentMapId, this.navTarget.mapId, this.allMaps);
+            this.compassNeedle.rotation = hop !== null ? edgeAngle(hop) : 0;
+        }
+
+        this.compassLabel.setText(this.navTarget.name);
+        this.compassContainer.setVisible(true);
+    }
+
+    arriveAtNavTarget ()
+    {
+        const name = this.navTarget?.name ?? 'your destination';
+        this.clearNavTarget();
+
+        const toast = this.add.text(GAME_WIDTH / 2, 110, `You made it to ${name}!`, {
+            fontFamily: 'Arial Black', fontSize: 26, color: '#ffeb3b',
+            stroke: '#000000', strokeThickness: 5
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+
+        this.tweens.add({ targets: toast, alpha: 0, delay: 1400, duration: 500, onComplete: () => toast.destroy() });
+    }
+
+    setNavTarget (target: NavTarget)
+    {
+        this.navTarget = target;
+        saveNavTarget(target);
+    }
+
+    clearNavTarget ()
+    {
+        this.navTarget = null;
+        saveNavTarget(null);
+        this.compassContainer.setVisible(false);
     }
 
     createActionBubble ()
@@ -705,6 +814,7 @@ export class Driving extends Scene
         }
 
         this.updateActionBubble(time);
+        this.updateCompass();
 
         const dt = delta / 1000;
 

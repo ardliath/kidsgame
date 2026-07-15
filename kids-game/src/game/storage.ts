@@ -14,6 +14,7 @@ const COINS_KEY = 'kids-game-coins';
 const PANTRY_KEY = 'kids-game-pantry';
 const MUTED_KEY = 'kids-game-muted';
 const COMPLETED_RECIPES_KEY = 'kids-game-recipes-done';
+const NAV_TARGET_KEY = 'kids-game-nav-target';
 
 export interface SaveData
 {
@@ -448,6 +449,42 @@ export function saveCompletedRecipe (recipeId: string)
     catch
     {
         //  Ignore
+    }
+}
+
+//  Where the compass is currently pointing (the GPS feature) — null means
+//  no active target
+export interface NavTarget
+{
+    id: string;
+    name: string;
+    mapId: string;
+    x: number;
+    y: number;
+}
+
+export function loadNavTarget (): NavTarget | null
+{
+    try
+    {
+        const raw = localStorage.getItem(NAV_TARGET_KEY);
+        return raw ? JSON.parse(raw) as NavTarget : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+export function saveNavTarget (target: NavTarget | null)
+{
+    try
+    {
+        localStorage.setItem(NAV_TARGET_KEY, JSON.stringify(target));
+    }
+    catch
+    {
+        //  Ignore: the compass just won't remember its target next reload
     }
 }
 

@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, TILE } from '../mapBuilder';
+import { listKnownDestinations } from '../navigation';
 import { loadFleet } from '../storage';
 import { Driving } from './Driving';
 
@@ -178,22 +179,31 @@ export class MiniMap extends Scene
             }
         }
 
+        //  Every known nav destination in this town, keyed by its world
+        //  position, so tappable markers below can look up the right name
+        const destinations = listKnownDestinations({ [map.id]: map });
+        const destinationAt = (x: number, y: number) => destinations.find(d => d.x === x && d.y === y);
+
         //  Object houses and shops on top
         map.objects?.forEach(obj => {
 
             const cx = cell.x + (obj.col + (obj.w ?? 1) / 2) * TILE_PX;
             const cy = cell.y + (obj.row + (obj.h ?? 1) / 2) * TILE_PX;
+            const worldX = (obj.col + (obj.w ?? (obj.type === 'yard' ? 3 : 1)) / 2) * TILE;
+            const worldY = (obj.row + (obj.h ?? (obj.type === 'yard' ? 2 : 1)) / 2) * TILE;
 
             if (obj.sign)
             {
                 //  A shop: emoji marker
                 const emoji = obj.shopType === 'cafe' ? '☕' : obj.shopType === 'treat' ? '🍦' : '🏪';
                 this.add.text(cx, cy, emoji, { fontSize: 26 }).setOrigin(0.5);
+                this.makeNavZone(cx, cy, (obj.w ?? 1) * TILE_PX, (obj.h ?? 1) * TILE_PX, destinationAt(worldX, worldY));
             }
             else if (obj.type === 'yard')
             {
                 this.add.rectangle(cx, cy, (obj.w ?? 3) * TILE_PX - 2, (obj.h ?? 2) * TILE_PX - 2, 0xbcaaa4).setStrokeStyle(2, 0x6d4c41);
                 this.add.text(cx, cy, '🏗️', { fontSize: 24 }).setOrigin(0.5);
+                this.makeNavZone(cx, cy, (obj.w ?? 3) * TILE_PX, (obj.h ?? 2) * TILE_PX, destinationAt(worldX, worldY));
             }
             else if (obj.type === 'house')
             {
@@ -207,6 +217,7 @@ export class MiniMap extends Scene
                     : '🗼';
 
                 this.add.text(cx, cy, emoji, { fontSize: 22 }).setOrigin(0.5);
+                this.makeNavZone(cx, cy, (obj.w ?? 1) * TILE_PX, (obj.h ?? 1) * TILE_PX, destinationAt(worldX, worldY));
             }
         });
 
@@ -218,6 +229,25 @@ export class MiniMap extends Scene
         this.add.text(cell.x + cols * TILE_PX / 2, cell.y + rows * TILE_PX + 18, map.name, {
             fontFamily: 'Arial Black', fontSize: 22, color: current ? '#ffeb3b' : '#ffffff'
         }).setOrigin(0.5);
+    }
+
+    //  Tapping a known destination's marker sets it as the compass target
+    //  and closes the map — this is the whole "GPS" selection UI
+    makeNavZone (cx: number, cy: number, w: number, h: number, dest: { id: string; name: string; mapId: string; x: number; y: number } | undefined)
+    {
+        if (!dest)
+        {
+            return;
+        }
+
+        const zone = this.add.zone(cx, cy, w, h).setInteractive();
+        zone.on('pointerdown', () => {
+
+            const driving = this.scene.get('Driving') as Driving;
+            driving.setNavTarget(dest);
+            this.close();
+
+        });
     }
 
     tileColour (t: string): number
