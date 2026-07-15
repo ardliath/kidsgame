@@ -25,11 +25,17 @@ const WINDOW_UNITS: [number, number][] = [ [ 2, 4 ], [ 6, 8 ] ];
 //  Builders get paid!
 const BUILD_REWARD = 5;
 
-interface Mound
+//  The foundations start as a top-down square plot; only the ring of tiles
+//  around the edge is the trench, dug one tap each, grass green to dirt brown
+const DIG_GRID = 5;
+const DIG_TILE = 72;
+const DIG_CENTRE_Y = 470;
+
+//  One tile of the foundation trench, seen from above
+interface DirtTile
 {
-    ellipse: Phaser.GameObjects.Ellipse;
-    zone: Phaser.GameObjects.Zone;
-    hits: number;
+    rect: Phaser.GameObjects.Rectangle;
+    dug: boolean;
 }
 
 //  A single brick-shaped space in the wall. Rows alternate between full
@@ -64,7 +70,9 @@ export class Builder extends Scene
     siteId = '';
     instruction: Phaser.GameObjects.Text;
 
-    mounds: Mound[] = [];
+    dirtTiles: DirtTile[] = [];
+    allDigRects: Phaser.GameObjects.Rectangle[] = [];
+    digBackground: Phaser.GameObjects.Rectangle | null = null;
     dugCount = 0;
 
     bricks: Phaser.GameObjects.Rectangle[] = [];
@@ -92,7 +100,9 @@ export class Builder extends Scene
 
     create ()
     {
-        this.mounds = [];
+        this.dirtTiles = [];
+        this.allDigRects = [];
+        this.digBackground = null;
         this.dugCount = 0;
         this.bricks = [];
         this.brickSlots = [];
@@ -105,14 +115,11 @@ export class Builder extends Scene
         this.swatchRings.clear();
         this.finished = false;
 
-        //  Sky, sun and grass
-        this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x81d4fa);
-        this.add.circle(150, 130, 60, 0xffeb3b);
-        this.add.ellipse(1000, 150, 220, 70, 0xffffff);
-        this.add.ellipse(880, 190, 160, 50, 0xffffff);
-        this.add.rectangle(CX, (GROUND_Y + GAME_HEIGHT) / 2, GAME_WIDTH, GAME_HEIGHT - GROUND_Y, 0x7cb342);
+        //  Digging is a top-down look at the plot, so it's grass all the
+        //  way to every edge — no sky until we stand the wall up afterwards
+        this.digBackground = this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x7cb342);
 
-        this.instruction = this.add.text(CX, 90, 'Tap the dirt to dig!', {
+        this.instruction = this.add.text(CX, 90, 'Dig out the foundations!', {
             fontFamily: 'Arial Black', fontSize: 44, color: '#ffffff',
             stroke: '#00000', strokeThickness: 8
         }).setOrigin(0.5);
@@ -124,58 +131,89 @@ export class Builder extends Scene
         }).setOrigin(0.5);
         this.add.zone(GAME_WIDTH - 60, 60, 90, 90).setInteractive().on('pointerdown', () => this.cancel());
 
-        this.createMounds();
+        this.createDirtGrid();
     }
 
-    slotX (col: number): number
+    //  A top-down look at the building plot: a 5x5 square of grass tiles.
+    //  Only the ring around the edge is the trench — tap a tile to dig it,
+    //  flipping it from grass green to dug-out brown. The 3x3 in the middle
+    //  is just the untouched lawn where the house floor will be.
+    createDirtGrid ()
     {
-        return WALL_LEFT + BRICK_W / 2 + col * BRICK_W;
-    }
+        const left = CX - (DIG_GRID * DIG_TILE) / 2;
+        const top = DIG_CENTRE_Y - (DIG_GRID * DIG_TILE) / 2;
 
-    createMounds ()
-    {
-        for (let i = 0; i < BRICK_COLS; i++)
+        for (let row = 0; row < DIG_GRID; row++)
         {
-            const x = this.slotX(i);
-
-            const ellipse = this.add.ellipse(x, GROUND_Y - 20, 92, 56, 0x8d6e63);
-            ellipse.setStrokeStyle(4, 0x6d4c41);
-
-            const zone = this.add.zone(x, GROUND_Y - 20, 104, 100);
-            zone.setInteractive();
-
-            const mound: Mound = { ellipse, zone, hits: 0 };
-            this.mounds.push(mound);
-
-            zone.on('pointerdown', () => this.dig(mound));
-        }
-    }
-
-    dig (mound: Mound)
-    {
-        mound.hits++;
-
-        if (mound.hits === 1)
-        {
-            //  First hit: the mound squashes down
-            mound.ellipse.setFillStyle(0x795548);
-            this.tweens.add({ targets: mound.ellipse, scaleY: 0.55, scaleX: 0.85, duration: 120 });
-        }
-        else if (mound.hits === 2)
-        {
-            //  Second hit: it becomes a dug hole
-            mound.ellipse.destroy();
-            mound.zone.destroy();
-
-            this.add.rectangle(mound.zone.x, GROUND_Y - 12, 96, 32, 0x4e342e);
-
-            this.dugCount++;
-
-            if (this.dugCount === BRICK_COLS)
+            for (let col = 0; col < DIG_GRID; col++)
             {
-                this.startBricks();
+                const border = row === 0 || row === DIG_GRID - 1 || col === 0 || col === DIG_GRID - 1;
+                const x = left + col * DIG_TILE + DIG_TILE / 2;
+                const y = top + row * DIG_TILE + DIG_TILE / 2;
+
+                const rect = this.add.rectangle(x, y, DIG_TILE - 6, DIG_TILE - 6, 0x7cb342);
+                rect.setStrokeStyle(3, 0x33691e);
+                this.allDigRects.push(rect);
+
+                if (!border)
+                {
+                    continue;
+                }
+
+                rect.setInteractive();
+
+                const tile: DirtTile = { rect, dug: false };
+                this.dirtTiles.push(tile);
+
+                rect.on('pointerdown', () => this.digTile(tile));
             }
         }
+    }
+
+    digTile (tile: DirtTile)
+    {
+        if (tile.dug)
+        {
+            return;
+        }
+
+        tile.dug = true;
+        tile.rect.disableInteractive();
+        tile.rect.setFillStyle(0x6d4c41);
+        tile.rect.setStrokeStyle(3, 0x4e342e);
+
+        this.tweens.add({ targets: tile.rect, scaleX: 0.85, scaleY: 0.85, duration: 100, yoyo: true });
+
+        this.dugCount++;
+
+        if (this.dugCount === this.dirtTiles.length)
+        {
+            for (const rect of this.allDigRects)
+            {
+                rect.destroy();
+            }
+
+            this.allDigRects = [];
+
+            this.digBackground?.destroy();
+            this.digBackground = null;
+
+            this.buildFrontBackdrop();
+            this.startBricks();
+        }
+    }
+
+    //  Standing the view up from looking-straight-down at the plot to
+    //  looking-straight-at the wall we're about to build: sky, sun, grass.
+    //  Sent behind everything already on screen (the instruction text, quit
+    //  button) since it's added well after them.
+    buildFrontBackdrop ()
+    {
+        this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x81d4fa).setDepth(-10);
+        this.add.circle(150, 130, 60, 0xffeb3b).setDepth(-10);
+        this.add.ellipse(1000, 150, 220, 70, 0xffffff).setDepth(-10);
+        this.add.ellipse(880, 190, 160, 50, 0xffffff).setDepth(-10);
+        this.add.rectangle(CX, (GROUND_Y + GAME_HEIGHT) / 2, GAME_WIDTH, GAME_HEIGHT - GROUND_Y, 0x7cb342).setDepth(-10);
     }
 
     startBricks ()
