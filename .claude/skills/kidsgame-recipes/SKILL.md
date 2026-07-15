@@ -36,7 +36,7 @@ A recipe is a sequence the child performs in order. Each step is one of:
 
 | Step | Fields | What happens |
 |---|---|---|
-| `fetch` | `ingredient` | Find it among decoys in the fridge; uses fridge stock first, then the shopping bag; blocks with a "buy some at the shop" hint if both are empty |
+| `fetch` | `ingredient` | Find it among decoys in the fridge, drawing from his pantry; blocks with a "buy some at the shop" hint if he has none |
 | `pour` | `ingredient`, `into: "pan"｜"glass"` | Hold the jug/carton to pour into the pan or a glass |
 | `add` | `ingredient` | Tap a fetched ingredient to tip it into the pan (used after a `pour` has put something in the pan already, e.g. pasta into boiling water) |
 | `stir` | `stirs` (number) | Tap the pan that many times; the contents visibly cook towards the result colour |
@@ -77,14 +77,33 @@ recipe's top level, no `steps` array) that `recipeSteps()` in `recipes.ts`
 expands automatically — it still works, but write new recipes with an
 explicit `steps` list, it's much easier to read and to make multi-step.
 
-### Fridge stock
+### Locking a recipe until earlier ones are cooked
 
-Every house gets 2 of each known ingredient in its fridge the first time
-someone cooks there (`Cooking.ts`'s `create()`). If you add a brand new
-ingredient, existing saved houses will pick it up automatically next time
-they cook (the stocking-up code fills in anything missing, it doesn't
-reset houses that already have a fridge). You don't need to do anything
-extra for this.
+Add `"requiresCompleted": N` to a recipe to keep it off the "what shall we
+make?" picker — shown as a greyed-out, locked tile instead — until the
+player has cooked at least `N` of the *other* recipes at least once each
+(distinct dishes, not N total cooks of anything). Completion is tracked
+globally in `kids-game-recipes-done` (see the kidsgame-persistence skill).
+Omit the field entirely for a recipe that should be available from the
+start, like the original toast/pasta/apple-juice. This is how you build a
+difficulty ladder: give each new recipe a `requiresCompleted` a bit higher
+than the last so they unlock progressively.
+
+The picker itself pages through recipes `RECIPES_PER_PAGE` (currently 3) at
+a time, with next/back arrows that only appear when there's another page —
+you don't need to do anything for this as you add more dishes, it just
+keeps working.
+
+### There's one pantry, not a fridge per house
+
+Food isn't stored per-house. The player has a single global pantry (his
+one home fridge) — `Cooking.ts`'s `fetch` step draws from it no matter
+which house's kitchen he's cooking in, and the grocery `Shop.ts` stocks it.
+It's seeded with a small starting stock exactly once, for a brand new game
+(see `pantryExists()` in `Driving.ts`) — a new ingredient you add does
+**not** retroactively appear in an existing player's pantry; like any other
+ingredient, he has to buy it at a shop that sells it (see the kidsgame-maps
+skill's `sells` field) before he can fetch it.
 
 ## Ice cream: `icecream.json`
 

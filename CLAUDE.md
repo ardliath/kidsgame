@@ -13,9 +13,9 @@ touch-first, with keyboard as a secondary input for desktop testing.
 - Content is JSON, not hardcoded: town maps (`public/assets/maps/*.json`),
   cooking (`public/assets/recipes.json`), ice cream (`public/assets/icecream.json`).
   See the relevant skill before hand-editing these — each has a schema.
-- Persistence: everything the player does (built houses, coins, shopping bag,
-  fridge stock, car choice, name, current map, visited houses) is saved through
-  helpers in `storage.ts`, not raw `localStorage` calls elsewhere.
+- Persistence: everything the player does (built houses, coins, pantry
+  stock, fleet, car colour, name, current map, visited houses) is saved
+  through helpers in `storage.ts`, not raw `localStorage` calls elsewhere.
 
 ## How the game is put together
 

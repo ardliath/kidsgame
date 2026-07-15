@@ -1,17 +1,18 @@
 ---
 name: kidsgame-persistence
-description: The storage.ts conventions for saving player progress in the kids driving game (coins, built houses, fridge stock, shopping bag, car choice, name, visited houses, current map). Use this whenever asked to make something persist across reloads/sessions, or when changing the shape of something already saved.
+description: The storage.ts conventions for saving player progress in the kids driving game (coins, built houses, pantry, fleet, car colour, name, visited houses, current map, completed recipes). Use this whenever asked to make something persist across reloads/sessions, or when changing the shape of something already saved.
 ---
 
 # Saving player progress
 
 Every bit of progress the player keeps between sessions — coins, built
-houses, house interiors and fridges, the shopping bag, car choice, name,
-current map, visited houses — goes through a typed `loadX`/`saveX` pair in
-`kids-game/src/game/storage.ts`. **Never call `localStorage` directly from
-a scene.** This isn't just tidiness: every real save in this game has
-needed a default value and a migration path at some point (see below), and
-that logic belongs in one place, not copy-pasted at every call site.
+houses, house interiors, his pantry, his fleet of vehicles, car colour,
+name, current map, visited houses, which recipes he's cooked — goes
+through a typed `loadX`/`saveX` pair in `kids-game/src/game/storage.ts`.
+**Never call `localStorage` directly from a scene.** This isn't just
+tidiness: every real save in this game has needed a default value and a
+migration path at some point (see below), and that logic belongs in one
+place, not copy-pasted at every call site.
 
 ## Adding a new saved value
 
@@ -65,45 +66,45 @@ try/catch shape.
 ## Evolving a value that's already saved somewhere
 
 This is the part that's easy to get wrong: **players already have data in
-the old shape**, and it must keep working. The pattern used every time this
-has come up so far is "lazily patch it in when it's next touched," not a
-one-off migration step:
+the old shape**, and it must keep working. Make the new field optional in
+the type, and have the reader fall back to a sane default rather than
+assuming it's there — not a one-off migration step:
 
 ```ts
-// storage.ts — the field is optional, so old saved specs parse fine without it
-export interface InteriorSpec
+// storage.ts — old saves predate multi-town, so this is optional
+export interface SaveData
 {
+    mapId?: string;
     // ...
-    fridge?: Record<string, number>;
 }
 ```
 ```ts
-// Cooking.ts create() — fill it in the first time it's needed
-if (this.houseSpec && !this.houseSpec.fridge)
-{
-    this.houseSpec.fridge = {};
-
-    for (const id of Object.keys(this.config.ingredients))
-    {
-        this.houseSpec.fridge[id] = 2;
-    }
-
-    saveInterior(this.houseId, this.houseSpec);
-}
+// Driving.ts create() — an old save without a mapId just lands in the
+// default town, rather than the load crashing or the car ending up nowhere
+let mapId = this.sceneData.mapId ?? loadCurrentMap() ?? DEFAULT_MAP;
 ```
 
-Do this whenever you add a field to something already being saved: make
-the field optional in the type, and backfill a sensible default the next
-time that record is loaded and used — not eagerly for every save on boot,
-just lazily, right where it's about to matter. This is exactly how new
-ingredients silently appear in old houses' fridges, and how you'd add
-anything else new to an existing save shape.
+The next time the game saves — which happens constantly during normal play
+(`saveCurrentMap`, `saveGame`, etc.) — the field gets written back in the
+new shape, so the fallback is really only ever exercised once per old save.
+Do this whenever you add a field to something already being saved: make it
+optional, and have every reader fall back to a sane default, rather than
+writing a one-off migration step that has to run before anything else can
+touch the data.
+
+Note this is deliberately different from "new content just works": adding
+a brand new *ingredient* to `recipes.json`, for instance, does **not**
+auto-stock it into existing players' pantries — it only gets seeded once,
+for a pantry that doesn't exist yet (see `pantryExists()` in `Driving.ts`).
+An old save simply has to buy it at the shop like anything else. Don't
+assume every new piece of content needs a backfill; only saved *shapes*
+(the fields a record has) need the fallback treatment above.
 
 ## Don't reset data the player already made
 
-Notice `saveDemolished`, `saveExtraSite`, `saveVisitedHouse`, `saveBuiltHouse`
-all *merge into* what's already stored (read-modify-write), never overwrite
-the whole key. If you're adding a value that accumulates (a list, a set of
+Notice `saveDemolished`, `saveExtraSite`, `saveVisitedHouse`, `saveBuiltHouse`,
+`saveCompletedRecipe` all *merge into* what's already stored (read-modify-write),
+never overwrite the whole key. If you're adding a value that accumulates (a list, a set of
 flags, per-item counts), follow that shape — read the existing record,
 merge your change in, write the whole thing back. A plain overwrite is only
 correct for values that are genuinely single global state, like the coin

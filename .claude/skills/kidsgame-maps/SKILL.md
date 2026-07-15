@@ -61,11 +61,27 @@ never gets a bubble to enter it:
 `sells` references ingredient ids from `recipes.json` for a grocery shop, or
 flavour ids from `icecream.json` for a treat shop (see the kidsgame-recipes
 skill). `shopType` picks which scene opens: omit it or set `"grocery"` to
-open `Shop.ts` (browse shelves, fill a basket, ingredients go in the
-player's bag for cooking); set `"treat"` to open `IceCream.ts` instead (an
-eat-it-now cone-building mini-game, nothing goes in the bag). Don't invent a
+open `Shop.ts` (browse shelves, fill a basket, ingredients go into the
+player's pantry for cooking); set `"treat"` to open `IceCream.ts` instead
+(an eat-it-now cone-building mini-game, nothing is stocked). Don't invent a
 third `shopType` without also adding the scene and the routing for it in
 `Driving.ts`'s `openAction`.
+
+**The player's own house** — at most one per map, flagged `player: true`.
+It always takes his currently-chosen car colour, shows his name on the
+roof, and is exempt from the auto-demolition system below (it's never a
+site-backfill candidate):
+```json
+{ "id": "players-house", "type": "house", "col": 4, "row": 10, "player": true, "facing": "north" }
+```
+
+**The builders' yard** — where the player picks which vehicle from his
+fleet to drive (see the kidsgame-cars skill):
+```json
+{ "id": "builders-yard", "type": "yard", "col": 1, "row": 10, "w": 3, "h": 2 }
+```
+Nothing stops a second one technically, but by convention there's only one
+in the whole world, in `home-town`; `MiniMap.ts` marks it same as a shop.
 
 **A building site** — an empty plot the player can build a house on with the
 Builder mini-game:
@@ -82,8 +98,13 @@ builder as the player's car:
 ```json
 { "col": 4, "row": 3, "facing": "east", "colour": "blue", "model": "hatch" }
 ```
-`model` is `hatch`, `racer`, `truck`, or `lorry`. Keep them clear of the
-`start` tile and of exit roads so the player never spawns boxed in.
+`model` is any key from `CAR_MODELS` in `carShapes.ts` (currently `hatch`,
+`racer`, `truck`, `lorry`, `forklift`, `digger`, `mixer` — see the
+kidsgame-cars skill for adding more). These aren't just static obstacles —
+Driving.ts drives them around the road network on their own (random turns
+at junctions, no reversing except at dead ends) — so keep them clear of the
+`start` tile and of exit roads so the player never spawns boxed in, and
+don't assume a parked car will still be exactly where the JSON put it.
 
 ## Connecting towns with `exits`
 

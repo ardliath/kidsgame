@@ -14,7 +14,8 @@ one-line registrations; you should not need to touch `Driving.ts` or
 ## 1. Draw the shapes
 
 Add a function following the existing ones (`hatchShapes`, `racerShapes`,
-`truckShapes`, `lorryShapes`):
+`truckShapes`, `lorryShapes`, `forkliftShapes`, `diggerShapes`,
+`mixerShapes`):
 
 ```ts
 function busShapes (scene: Scene, colour: number, dark: number): Phaser.GameObjects.GameObject[]

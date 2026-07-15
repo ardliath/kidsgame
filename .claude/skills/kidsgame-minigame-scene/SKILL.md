@@ -100,11 +100,11 @@ double-resumes something that was never paused (harmless but sloppy).
 ## Persistence
 
 Never call `localStorage` directly from a scene. Everything the player
-does — coins, built houses, fridge stock, the shopping bag, car choice,
-name, current map, visited houses — goes through a typed helper in
-`storage.ts` (`loadX`/`saveX` pairs). Add a new pair there if your mini-game
-needs to remember something new; keep the read/write shape consistent with
-the existing ones (plain objects, defensive try/catch, sane defaults).
+does — coins, built houses, his pantry, his fleet, car choice, name,
+current map, visited houses — goes through a typed helper in `storage.ts`
+(`loadX`/`saveX` pairs). Add a new pair there if your mini-game needs to
+remember something new; keep the read/write shape consistent with the
+existing ones (plain objects, defensive try/catch, sane defaults).
 
 ## Registering the scene
 
