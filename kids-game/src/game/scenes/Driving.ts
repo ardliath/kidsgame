@@ -6,7 +6,7 @@ import { DeliveriesConfig, DeliveryJob } from '../deliveries';
 import { buildMap, DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch } from '../sfx';
-import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveFleet, saveFuel, saveNavTarget, savePantry, SaveData } from '../storage';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDirt, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDirt, saveFleet, saveFuel, saveNavTarget, savePantry, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -28,6 +28,9 @@ const FUEL_LOW_FLOOR = 0.35;
 //  Cost of a full tank; a part-fill costs proportionally less, with a
 //  minimum of 1 coin so topping up is never free
 const FUEL_FULL_PRICE = 10;
+
+//  Seconds of continuous driving to go from spotless to fully dirty
+const DIRT_ACCUM_SECONDS = 720;
 
 //  NPC traffic: a gentle constant speed, and the four directions they can
 //  choose between at each tile centre
@@ -125,6 +128,7 @@ export class Driving extends Scene
     //  Last fuel level actually written to storage, so draining doesn't
     //  hit localStorage every frame
     fuelLastSaved = 1;
+    dirtLastSaved = 0;
 
     constructor ()
     {
@@ -183,6 +187,9 @@ export class Driving extends Scene
         //  reload here rather than only on first boot
         this.registry.set('fuel', loadFuel(this.registry.get('carModel') as string));
         this.fuelLastSaved = this.registry.get('fuel') as number;
+
+        this.registry.set('dirt', loadDirt(this.registry.get('carModel') as string));
+        this.dirtLastSaved = this.registry.get('dirt') as number;
 
         //  Seed his pantry with a small starting stock the very first time,
         //  so his first cook works without a mandatory shop trip. After that
@@ -262,9 +269,11 @@ export class Driving extends Scene
             this.registry.events.off('changedata-carColour', this.restyleCar, this);
             this.registry.events.off('changedata-carModel', this.restyleCar, this);
 
-            //  Flush the outgoing vehicle's tank so the next create() (a new
-            //  town, or a different vehicle entirely) reads an up-to-date value
+            //  Flush the outgoing vehicle's tank and dirt so the next create()
+            //  (a new town, or a different vehicle entirely) reads an
+            //  up-to-date value
             saveFuel(this.registry.get('carModel') as string, (this.registry.get('fuel') as number) ?? 1);
+            saveDirt(this.registry.get('carModel') as string, (this.registry.get('dirt') as number) ?? 0);
         });
 
         const cam = this.cameras.main;
@@ -1091,6 +1100,17 @@ export class Driving extends Scene
             {
                 saveFuel(this.registry.get('carModel') as string, drained);
                 this.fuelLastSaved = drained;
+            }
+
+            //  He gets dirty from driving, same throttled-save shape as fuel
+            const dirt = (this.registry.get('dirt') as number) ?? 0;
+            const dirtied = Math.min(1, dirt + dt / DIRT_ACCUM_SECONDS);
+            this.registry.set('dirt', dirtied);
+
+            if (Math.abs(dirtied - this.dirtLastSaved) >= 0.01)
+            {
+                saveDirt(this.registry.get('carModel') as string, dirtied);
+                this.dirtLastSaved = dirtied;
             }
         }
 

@@ -18,6 +18,7 @@ const COMPLETED_RECIPES_KEY = 'kids-game-recipes-done';
 const NAV_TARGET_KEY = 'kids-game-nav-target';
 const DELIVERY_KEY = 'kids-game-delivery';
 const FUEL_KEY = 'kids-game-fuel';
+const WASH_KEY = 'kids-game-dirt';
 
 export interface SaveData
 {
@@ -546,6 +547,37 @@ export function saveFuel (model: string, level: number)
     catch
     {
         //  Ignore: worst case the tank looks fuller than it should next session
+    }
+}
+
+//  How dirty each vehicle is, from 0 (clean) to 1 — same per-model shape as
+//  fuel, but starts life clean rather than needing a "full" default
+export function loadDirt (model: string): number
+{
+    try
+    {
+        const all = JSON.parse(localStorage.getItem(WASH_KEY) ?? '{}') as Record<string, number>;
+        const n = all[model];
+
+        return typeof n === 'number' && !isNaN(n) ? Math.max(0, Math.min(1, n)) : 0;
+    }
+    catch
+    {
+        return 0;
+    }
+}
+
+export function saveDirt (model: string, level: number)
+{
+    try
+    {
+        const all = JSON.parse(localStorage.getItem(WASH_KEY) ?? '{}') as Record<string, number>;
+        all[model] = Math.max(0, Math.min(1, level));
+        localStorage.setItem(WASH_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  Ignore: worst case it looks cleaner than it should next session
     }
 }
 
