@@ -17,6 +17,11 @@ const WALL_LEFT = CX - (BRICK_COLS * BRICK_W) / 2;
 
 const SWATCH_NAMES = [ 'red', 'orange', 'yellow', 'green', 'blue', 'purple' ];
 
+//  Openings left in the wall while bricking (in half-brick units, same
+//  scale as BrickSlot.xUnits), filled in by hand once the rest is up
+const DOOR_UNITS: [number, number] = [ 4, 6 ];
+const WINDOW_UNITS: [number, number][] = [ [ 2, 4 ], [ 6, 8 ] ];
+
 //  Builders get paid!
 const BUILD_REWARD = 5;
 
@@ -44,6 +49,16 @@ interface BrickSlot
     laid: boolean;
 }
 
+//  A door- or window-shaped gap, tapped by hand once the wall is up
+interface OpeningSlot
+{
+    zone: Phaser.GameObjects.Zone;
+    marker: Phaser.GameObjects.Rectangle;
+    tween: Phaser.Tweens.Tween;
+    filled: boolean;
+    build: () => void;
+}
+
 export class Builder extends Scene
 {
     siteId = '';
@@ -57,6 +72,9 @@ export class Builder extends Scene
     pulseTweens: Map<string, Phaser.Tweens.Tween> = new Map();
     totalPieces = 0;
     laidCount = 0;
+
+    openings: OpeningSlot[] = [];
+    openingsFilled = 0;
 
     chosenColour = 'red';
     swatchRings: Map<string, Phaser.GameObjects.Arc> = new Map();
@@ -81,6 +99,8 @@ export class Builder extends Scene
         this.pulseTweens.clear();
         this.totalPieces = 0;
         this.laidCount = 0;
+        this.openings = [];
+        this.openingsFilled = 0;
         this.chosenColour = 'red';
         this.swatchRings.clear();
         this.finished = false;
@@ -185,7 +205,7 @@ export class Builder extends Scene
         for (let row = 0; row < BRICK_ROWS; row++)
         {
             const offset = row % 2 === 1;
-            const pieces: [number, number][] = [];
+            let pieces: [number, number][] = [];
 
             if (!offset)
             {
@@ -204,6 +224,37 @@ export class Builder extends Scene
                 }
 
                 pieces.push([ BRICK_COLS * 2 - 1, BRICK_COLS * 2 ]);
+            }
+
+            //  Cut the door (rows 0-1) and windows (row 2) out of the wall,
+            //  capping the cut edges with a half brick when the row's own
+            //  bond doesn't already land exactly on the opening's edge
+            const openings = row <= 1 ? [ DOOR_UNITS ] : row === 2 ? WINDOW_UNITS : [];
+
+            for (const [ a, b ] of openings)
+            {
+                const next: [number, number][] = [];
+
+                for (const piece of pieces)
+                {
+                    if (piece[1] <= a || piece[0] >= b)
+                    {
+                        next.push(piece);
+                        continue;
+                    }
+
+                    if (piece[0] < a)
+                    {
+                        next.push([ piece[0], a ]);
+                    }
+
+                    if (piece[1] > b)
+                    {
+                        next.push([ b, piece[1] ]);
+                    }
+                }
+
+                pieces = next;
             }
 
             pieces.forEach((units, index) => {
@@ -311,28 +362,86 @@ export class Builder extends Scene
         }
     }
 
+    //  The wall's up; the door and window holes are left showing the sky
+    //  through them, same pulsing look as an unlocked brick, until he taps
+    //  each one in by hand
     decorate ()
     {
-        //  Door and windows pop in, then the roof slides down
-        const wallTop = this.brickY(BRICK_ROWS - 1) - BRICK_H / 2;
+        this.instruction.setText('Tap in the door and windows!');
 
-        const door = this.add.rectangle(CX, GROUND_Y - 56 - 60, 84, 120, 0x6d4c41).setScale(0);
-        this.tweens.add({ targets: door, scaleX: 1, scaleY: 1, duration: 200, ease: 'Back.Out', delay: 100 });
+        this.addOpening(CX, GROUND_Y - 84, 96, 104, () => this.placeDoor());
 
-        const knob = this.add.circle(CX + 26, GROUND_Y - 56 - 60, 7, 0xffeb3b).setAlpha(0);
-        this.tweens.add({ targets: knob, alpha: 1, duration: 150, delay: 320 });
-
-        for (const wx of [ CX - 140, CX + 140 ])
+        for (const wx of [ CX - 104, CX + 104 ])
         {
-            const window = this.add.rectangle(wx, this.brickY(2), 90, 70, 0xb3e5fc).setStrokeStyle(6, 0xffffff).setScale(0);
-            this.tweens.add({ targets: window, scaleX: 1, scaleY: 1, duration: 200, ease: 'Back.Out', delay: 250 });
+            this.addOpening(wx, this.brickY(2), 96, 48, () => this.placeWindow(wx));
+        }
+    }
+
+    addOpening (x: number, y: number, width: number, height: number, build: () => void)
+    {
+        const marker = this.add.rectangle(x, y, width, height, 0xffffff, 0.08).setStrokeStyle(3, 0xffffff, 0.35);
+        const zone = this.add.zone(x, y, width + 8, height + 8).setInteractive();
+
+        const tween = this.tweens.add({
+            targets: marker,
+            fillAlpha: 0.3,
+            strokeAlpha: 1,
+            duration: 400,
+            yoyo: true,
+            repeat: -1
+        });
+
+        const slot: OpeningSlot = { zone, marker, tween, filled: false, build };
+        this.openings.push(slot);
+
+        zone.on('pointerdown', () => this.fillOpening(slot));
+    }
+
+    fillOpening (slot: OpeningSlot)
+    {
+        if (slot.filled)
+        {
+            return;
         }
 
-        const roofWidth = BRICK_COLS * BRICK_W + 60;
-        const roof = this.add.triangle(CX, -100, 0, 120, roofWidth, 120, roofWidth / 2, 0, 0x6d4c41);
-        this.tweens.add({ targets: roof, y: wallTop - 60, duration: 450, ease: 'Bounce.Out', delay: 450 });
+        slot.filled = true;
+        slot.tween.destroy();
+        slot.zone.destroy();
+        slot.marker.destroy();
 
-        this.time.delayedCall(1000, () => this.showColourPicker());
+        slot.build();
+        this.openingsFilled++;
+
+        if (this.openingsFilled === this.openings.length)
+        {
+            this.raiseRoof();
+        }
+    }
+
+    placeDoor ()
+    {
+        const door = this.add.rectangle(CX, GROUND_Y - 84, 84, 104, 0x6d4c41).setScale(0);
+        this.tweens.add({ targets: door, scaleX: 1, scaleY: 1, duration: 200, ease: 'Back.Out' });
+
+        const knob = this.add.circle(CX + 26, GROUND_Y - 84, 7, 0xffeb3b).setAlpha(0);
+        this.tweens.add({ targets: knob, alpha: 1, duration: 150, delay: 120 });
+    }
+
+    placeWindow (wx: number)
+    {
+        const window = this.add.rectangle(wx, this.brickY(2), 90, 70, 0xb3e5fc).setStrokeStyle(6, 0xffffff).setScale(0);
+        this.tweens.add({ targets: window, scaleX: 1, scaleY: 1, duration: 200, ease: 'Back.Out' });
+    }
+
+    raiseRoof ()
+    {
+        const wallTop = this.brickY(BRICK_ROWS - 1) - BRICK_H / 2;
+        const roofWidth = BRICK_COLS * BRICK_W + 60;
+
+        const roof = this.add.triangle(CX, -100, 0, 120, roofWidth, 120, roofWidth / 2, 0, 0x6d4c41);
+        this.tweens.add({ targets: roof, y: wallTop - 60, duration: 450, ease: 'Bounce.Out' });
+
+        this.time.delayedCall(650, () => this.showColourPicker());
     }
 
     showColourPicker ()
