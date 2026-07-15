@@ -119,7 +119,7 @@ function diggerShapesSide (scene: Scene, colour: number, dark: number): Phaser.G
 
 function mixerShapesSide (scene: Scene, colour: number, dark: number): Phaser.GameObjects.GameObject[]
 {
-    const stripe = (angle: number) => scene.add.rectangle(10, -50, 60, 8, dark).setRotation(angle);
+    const stripe = (x: number) => scene.add.rectangle(x, -55, 12, 50, dark).setRotation(0.5);
 
     return [
         ...wheelsSide(scene, [ -34, -8, 26 ], 15),
@@ -127,10 +127,14 @@ function mixerShapesSide (scene: Scene, colour: number, dark: number): Phaser.Ga
         scene.add.rectangle(-32, -40, 28, 30, colour).setStrokeStyle(4, dark),
         scene.add.rectangle(-32, -44, 18, 12, 0xb3e5fc),
 
-        //  The big rotating drum, seen from the side, with its spiral fin as stripes
-        scene.add.circle(10, -50, 38, colour).setStrokeStyle(4, dark),
-        stripe(0.5), stripe(1.1), stripe(-0.3),
+        //  The drum's rotation axis runs along the truck's length, so from
+        //  the side it's a long barrel (same as from the top) rather than a
+        //  circle — that only happens looking straight down the axis, i.e.
+        //  from directly in front of or behind the truck
+        scene.add.rectangle(14, -55, 90, 50, colour).setStrokeStyle(4, dark),
+        stripe(-8), stripe(12), stripe(32),
 
-        scene.add.rectangle(10, -14, 12, 12, dark)
+        //  Pouring chute at the open (rear) end of the barrel
+        scene.add.rectangle(56, -30, 12, 16, dark).setRotation(0.4)
     ];
 }
