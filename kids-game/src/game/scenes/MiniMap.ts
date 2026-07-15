@@ -1,21 +1,13 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, TILE } from '../mapBuilder';
-import { listKnownDestinations } from '../navigation';
+import { MAP_IDS, MapData, mapCacheKey, TILE } from '../mapBuilder';
+import { listKnownDestinations, NavDestination } from '../navigation';
 import { loadFleet } from '../storage';
+import { drawConnectors, drawTownGrid, GAP, layoutTowns, TILE_PX } from '../townGrid';
 import { Driving } from './Driving';
 
 const CX = GAME_WIDTH / 2;
-const TILE_PX = 24;
-const GAP = 26;
-
-const EDGE_DELTA: Record<Edge, [number, number]> = {
-    north: [ 0, -1 ],
-    south: [ 0, 1 ],
-    east: [ 1, 0 ],
-    west: [ -1, 0 ]
-};
 
 export class MiniMap extends Scene
 {
@@ -43,7 +35,7 @@ export class MiniMap extends Scene
 
         //  Place the towns on a grid by following their exits, so the map
         //  reflects however the JSON connects them
-        const pos = this.layoutTowns(maps);
+        const pos = layoutTowns(maps);
 
         let minGx = Infinity, minGy = Infinity, maxGx = -Infinity, maxGy = -Infinity;
 
@@ -93,13 +85,28 @@ export class MiniMap extends Scene
         });
 
         //  Road bridges between neighbouring towns
-        this.drawConnectors(maps, cellOf);
+        drawConnectors(this, maps, cellOf);
 
         const currentMap = this.registry.get('mapId') as string;
 
         for (const id of Object.keys(maps))
         {
-            this.drawTown(maps[id], cellOf(id), id === currentMap);
+            const markers = drawTownGrid(this, maps[id], cellOf(id), id === currentMap);
+            const destinations = listKnownDestinations({ [id]: maps[id] });
+
+            //  Tapping a known destination's marker sets it as the compass
+            //  target and closes the map — this is the whole "GPS" UI
+            for (const marker of markers)
+            {
+                const obj = marker.obj;
+                const w = obj.w ?? (obj.type === 'yard' ? 3 : 1);
+                const h = obj.h ?? (obj.type === 'yard' ? 2 : 1);
+                const worldX = (obj.col + w / 2) * TILE;
+                const worldY = (obj.row + h / 2) * TILE;
+                const dest = destinations.find(d => d.x === worldX && d.y === worldY);
+
+                this.makeNavZone(marker.cx, marker.cy, w * TILE_PX, h * TILE_PX, dest);
+            }
         }
 
         //  His parked vehicles, then the you-are-here marker on top
@@ -119,121 +126,9 @@ export class MiniMap extends Scene
         this.input.keyboard?.on('keydown-ESC', () => this.close());
     }
 
-    layoutTowns (maps: Record<string, MapData>): Record<string, { gx: number; gy: number }>
-    {
-        const pos: Record<string, { gx: number; gy: number }> = {};
-        const start = maps[DEFAULT_MAP] ? DEFAULT_MAP : Object.keys(maps)[0];
-
-        pos[start] = { gx: 0, gy: 0 };
-
-        const queue = [ start ];
-
-        while (queue.length > 0)
-        {
-            const id = queue.shift()!;
-            const exits = maps[id].exits ?? {};
-
-            for (const edge of Object.keys(exits) as Edge[])
-            {
-                const target = exits[edge];
-
-                if (target && maps[target] && !pos[target])
-                {
-                    const [ dx, dy ] = EDGE_DELTA[edge];
-                    pos[target] = { gx: pos[id].gx + dx, gy: pos[id].gy + dy };
-                    queue.push(target);
-                }
-            }
-        }
-
-        //  Any unreachable maps get parked in a spare row
-        let spare = 0;
-
-        for (const mapId of Object.keys(maps))
-        {
-            if (!pos[mapId])
-            {
-                pos[mapId] = { gx: spare++, gy: 99 };
-            }
-        }
-
-        return pos;
-    }
-
-    drawTown (map: MapData, cell: { x: number; y: number }, current: boolean)
-    {
-        const cols = map.tiles[0].length;
-        const rows = map.tiles.length;
-
-        //  Terrain
-        for (let r = 0; r < rows; r++)
-        {
-            for (let c = 0; c < cols; c++)
-            {
-                const t = map.tiles[r][c];
-                const colour = this.tileColour(t);
-                const x = cell.x + c * TILE_PX + TILE_PX / 2;
-                const y = cell.y + r * TILE_PX + TILE_PX / 2;
-
-                this.add.rectangle(x, y, TILE_PX, TILE_PX, colour);
-            }
-        }
-
-        //  Every known nav destination in this town, keyed by its world
-        //  position, so tappable markers below can look up the right name
-        const destinations = listKnownDestinations({ [map.id]: map });
-        const destinationAt = (x: number, y: number) => destinations.find(d => d.x === x && d.y === y);
-
-        //  Object houses and shops on top
-        map.objects?.forEach(obj => {
-
-            const cx = cell.x + (obj.col + (obj.w ?? 1) / 2) * TILE_PX;
-            const cy = cell.y + (obj.row + (obj.h ?? 1) / 2) * TILE_PX;
-            const worldX = (obj.col + (obj.w ?? (obj.type === 'yard' ? 3 : 1)) / 2) * TILE;
-            const worldY = (obj.row + (obj.h ?? (obj.type === 'yard' ? 2 : 1)) / 2) * TILE;
-
-            if (obj.sign)
-            {
-                //  A shop: emoji marker
-                const emoji = obj.shopType === 'cafe' ? '☕' : obj.shopType === 'treat' ? '🍦' : '🏪';
-                this.add.text(cx, cy, emoji, { fontSize: 26 }).setOrigin(0.5);
-                this.makeNavZone(cx, cy, (obj.w ?? 1) * TILE_PX, (obj.h ?? 1) * TILE_PX, destinationAt(worldX, worldY));
-            }
-            else if (obj.type === 'yard')
-            {
-                this.add.rectangle(cx, cy, (obj.w ?? 3) * TILE_PX - 2, (obj.h ?? 2) * TILE_PX - 2, 0xbcaaa4).setStrokeStyle(2, 0x6d4c41);
-                this.add.text(cx, cy, '🏗️', { fontSize: 24 }).setOrigin(0.5);
-                this.makeNavZone(cx, cy, (obj.w ?? 3) * TILE_PX, (obj.h ?? 2) * TILE_PX, destinationAt(worldX, worldY));
-            }
-            else if (obj.type === 'house')
-            {
-                this.add.rectangle(cx, cy, (obj.w ?? 1) * TILE_PX - 4, (obj.h ?? 1) * TILE_PX - 4, 0xc8a878);
-            }
-            else if (obj.type === 'landmark')
-            {
-                const emoji = obj.kind === 'clock-tower' ? '🕰️'
-                    : obj.kind === 'windmill' ? '🎡'
-                    : obj.kind === 'pier' ? '⚓'
-                    : '🗼';
-
-                this.add.text(cx, cy, emoji, { fontSize: 22 }).setOrigin(0.5);
-                this.makeNavZone(cx, cy, (obj.w ?? 1) * TILE_PX, (obj.h ?? 1) * TILE_PX, destinationAt(worldX, worldY));
-            }
-        });
-
-        //  Border, highlighted for the town he's in
-        const border = this.add.rectangle(cell.x + cols * TILE_PX / 2, cell.y + rows * TILE_PX / 2, cols * TILE_PX, rows * TILE_PX);
-        border.setStrokeStyle(current ? 6 : 3, current ? 0xffeb3b : 0x102027);
-        border.setFillStyle();
-
-        this.add.text(cell.x + cols * TILE_PX / 2, cell.y + rows * TILE_PX + 18, map.name, {
-            fontFamily: 'Arial Black', fontSize: 22, color: current ? '#ffeb3b' : '#ffffff'
-        }).setOrigin(0.5);
-    }
-
     //  Tapping a known destination's marker sets it as the compass target
     //  and closes the map — this is the whole "GPS" selection UI
-    makeNavZone (cx: number, cy: number, w: number, h: number, dest: { id: string; name: string; mapId: string; x: number; y: number } | undefined)
+    makeNavZone (cx: number, cy: number, w: number, h: number, dest: NavDestination | undefined)
     {
         if (!dest)
         {
@@ -248,56 +143,6 @@ export class MiniMap extends Scene
             this.close();
 
         });
-    }
-
-    tileColour (t: string): number
-    {
-        switch (t)
-        {
-            case 'R': return 0x6d6d6d;
-            case 'W': return 0x4fc3f7;
-            case 'S': return 0xffe082;
-            case 'H': return 0xc8a878;
-            default:
-                //  Legend houses count as houses; everything else is grass
-                return t !== '.' && t !== 'T' ? 0xc8a878 : 0x8bc34a;
-        }
-    }
-
-    drawConnectors (maps: Record<string, MapData>, cellOf: (id: string) => { x: number; y: number })
-    {
-        for (const id of Object.keys(maps))
-        {
-            const map = maps[id];
-            const cols = map.tiles[0].length;
-            const rows = map.tiles.length;
-            const cell = cellOf(id);
-
-            //  Only draw east and south so each bridge is drawn once
-            if (map.exits?.east)
-            {
-                for (let r = 0; r < rows; r++)
-                {
-                    if (map.tiles[r][cols - 1] === 'R')
-                    {
-                        const y = cell.y + r * TILE_PX + TILE_PX / 2;
-                        this.add.rectangle(cell.x + cols * TILE_PX + GAP / 2, y, GAP + 4, TILE_PX, 0x6d6d6d);
-                    }
-                }
-            }
-
-            if (map.exits?.south)
-            {
-                for (let c = 0; c < cols; c++)
-                {
-                    if (map.tiles[rows - 1][c] === 'R')
-                    {
-                        const x = cell.x + c * TILE_PX + TILE_PX / 2;
-                        this.add.rectangle(x, cell.y + rows * TILE_PX + GAP / 2, TILE_PX, GAP + 4, 0x6d6d6d);
-                    }
-                }
-            }
-        }
     }
 
     drawPlayer (maps: Record<string, MapData>, cellOf: (id: string) => { x: number; y: number }, currentMap: string)

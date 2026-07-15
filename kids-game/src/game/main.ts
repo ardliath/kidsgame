@@ -3,6 +3,7 @@ import { Builder } from './scenes/Builder';
 import { Cafe } from './scenes/Cafe';
 import { Cooking } from './scenes/Cooking';
 import { Dashboard } from './scenes/Dashboard';
+import { DeliveryBoard } from './scenes/DeliveryBoard';
 import { Driving } from './scenes/Driving';
 import { AUTO, Game, Scale } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from './layout';
@@ -42,7 +43,8 @@ const config: Phaser.Types.Core.GameConfig = {
         IceCream,
         Cafe,
         MiniMap,
-        Yard
+        Yard,
+        DeliveryBoard
     ]
 };
 

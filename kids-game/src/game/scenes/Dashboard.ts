@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { DASH_HEIGHT, DASH_TOP, GAME_WIDTH } from '../layout';
 import { playHorn } from '../sfx';
+import { Driving } from './Driving';
 
 //  Wheel far left and pedal far right for thumbs, gear stick in the middle
 const DASH_MID = DASH_TOP + DASH_HEIGHT / 2;
@@ -49,6 +50,9 @@ export class Dashboard extends Scene
     fuelNeedle: Phaser.GameObjects.Container;
     tempNeedle: Phaser.GameObjects.Container;
 
+    deliveryIcon: Phaser.GameObjects.Container;
+    deliveryWiggle: Phaser.Tweens.Tween | null = null;
+
     //  Keyboard controls for desktop testing: arrows steer/shift, space accelerates
     cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined;
     keyThrottle = false;
@@ -80,6 +84,7 @@ export class Dashboard extends Scene
         this.createSettingsCog();
         this.createMapButton();
         this.createYardButton();
+        this.createDeliveryButton();
 
         this.repaintPanel();
         this.registry.events.on('changedata-carColour', this.repaintPanel, this);
@@ -350,6 +355,22 @@ export class Dashboard extends Scene
         this.add.zone(GAME_WIDTH - 230, 50, 90, 90).setInteractive().on('pointerdown', () => this.openYard());
     }
 
+    createDeliveryButton ()
+    {
+        const parts: Phaser.GameObjects.GameObject[] = [
+            this.add.circle(0, 0, 36, 0x102027, 0.45)
+        ];
+
+        //  A parcel box with crossed tape
+        parts.push(this.add.rectangle(0, 0, 42, 34, 0x8d6e63).setStrokeStyle(3, 0x4e342e));
+        parts.push(this.add.rectangle(0, 0, 6, 34, 0xd7ccc8));
+        parts.push(this.add.rectangle(0, 0, 42, 6, 0xd7ccc8));
+
+        this.deliveryIcon = this.add.container(GAME_WIDTH - 320, 50, parts);
+
+        this.add.zone(GAME_WIDTH - 320, 50, 90, 90).setInteractive().on('pointerdown', () => this.openDelivery());
+    }
+
     //  Drop the controls so the car isn't stuck accelerating while paused
     releaseControls ()
     {
@@ -384,6 +405,15 @@ export class Dashboard extends Scene
 
         this.scene.pause('Driving');
         this.scene.launch('Yard');
+        this.scene.pause();
+    }
+
+    openDelivery ()
+    {
+        this.releaseControls();
+
+        this.scene.pause('Driving');
+        this.scene.launch('DeliveryBoard');
         this.scene.pause();
     }
 
@@ -496,6 +526,21 @@ export class Dashboard extends Scene
 
         this.wheel.rotation = this.wheelRotation;
         this.registry.set('steering', this.wheelRotation / MAX_TURN);
+
+        //  Wiggle the delivery icon while a job is waiting to be accepted
+        const driving = this.scene.get('Driving') as Driving;
+        const offered = driving?.deliveryJob?.state === 'offered';
+
+        if (offered && !this.deliveryWiggle)
+        {
+            this.deliveryWiggle = this.tweens.add({ targets: this.deliveryIcon, angle: 14, duration: 180, yoyo: true, repeat: -1 });
+        }
+        else if (!offered && this.deliveryWiggle)
+        {
+            this.deliveryWiggle.stop();
+            this.deliveryIcon.angle = 0;
+            this.deliveryWiggle = null;
+        }
     }
 
     steeringKeyDown (): boolean
