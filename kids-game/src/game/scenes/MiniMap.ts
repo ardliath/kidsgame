@@ -112,6 +112,7 @@ export class MiniMap extends Scene
         this.legendItem(CX + 130, legendY, '🏗️', 'Yard');
         this.legendItem(CX - 250, legendY + 34, '🏪', 'Shop');
         this.legendItem(CX - 90, legendY + 34, '🍦', 'Ice cream');
+        this.legendItem(CX + 130, legendY + 34, '☕', 'Café');
 
         this.input.keyboard?.on('keydown-ESC', () => this.close());
     }
@@ -185,7 +186,7 @@ export class MiniMap extends Scene
             if (obj.sign)
             {
                 //  A shop: emoji marker
-                const emoji = obj.sign.includes('ICE') ? '🍦' : '🏪';
+                const emoji = obj.shopType === 'cafe' ? '☕' : obj.shopType === 'treat' ? '🍦' : '🏪';
                 this.add.text(cx, cy, emoji, { fontSize: 26 }).setOrigin(0.5);
             }
             else if (obj.type === 'yard')

@@ -1,0 +1,21 @@
+{
+    "maxShots": 3,
+    "shotPrice": 1,
+    "coffeeColour": "#4e342e",
+    "milks": [
+        { "id": "black", "name": "Black", "colour": "#4e342e", "price": 0 },
+        { "id": "milky", "name": "Milky", "colour": "#d2a679", "price": 1 },
+        { "id": "creamy", "name": "Creamy", "colour": "#ead6b8", "price": 1 }
+    ],
+    "syrups": [
+        { "id": "caramel", "name": "Caramel", "colour": "#c8781f", "price": 1 },
+        { "id": "vanilla", "name": "Vanilla", "colour": "#efd9a5", "price": 1 },
+        { "id": "chocolate", "name": "Chocolate", "colour": "#3e2417", "price": 1 },
+        { "id": "strawberry", "name": "Strawberry", "colour": "#e57373", "price": 1 }
+    ],
+    "toppings": [
+        { "id": "foam", "name": "Foam", "colour": "#fff8e1", "price": 1 },
+        { "id": "cream", "name": "Cream", "colour": "#fffaf5", "price": 1 },
+        { "id": "sprinkles", "name": "Sprinkles", "colour": "#ff7043", "price": 1 }
+    ]
+}

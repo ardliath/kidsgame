@@ -19,7 +19,20 @@
         "B": { "type": "house", "colour": "blue", "facing": "west" }
     },
     "objects": [
-        { "id": "hill-plot-1", "type": "site", "col": 4, "row": 9 }
+        { "id": "hill-plot-1", "type": "site", "col": 4, "row": 9 },
+        {
+            "id": "hill-cafe",
+            "type": "house",
+            "col": 4,
+            "row": 3,
+            "w": 2,
+            "h": 1,
+            "colour": "brown",
+            "facing": "west",
+            "sign": "COFFEE",
+            "sells": [ "caramel", "vanilla", "chocolate", "strawberry" ],
+            "shopType": "cafe"
+        }
     ],
     "cars": [
         { "col": 5, "row": 2, "facing": "east", "colour": "red", "model": "hatch" },
