@@ -3,7 +3,7 @@ import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
-import { initSfx, playBrake, playCrunch, setEngine } from '../sfx';
+import { initSfx, playBrake, playCrunch } from '../sfx';
 import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, pantryExists, saveCurrentMap, saveFleet, savePantry, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
@@ -194,22 +194,16 @@ export class Driving extends Scene
         this.registry.events.on('changedata-carColour', this.restyleCar, this);
         this.registry.events.on('changedata-carModel', this.restyleCar, this);
 
-        //  Sound: start the audio, reset the per-life trigger state, and hush
-        //  the engine whenever a mini-game pauses driving
+        //  Sound: start the audio and reset the per-life trigger state
         initSfx();
         this.wasFast = false;
         this.wasHit = false;
         this.brakeCooldown = 0;
         this.crunchCooldown = 0;
 
-        const quietEngine = () => setEngine(false, 0);
-        this.events.on(Phaser.Scenes.Events.PAUSE, quietEngine);
-
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.registry.events.off('changedata-carColour', this.restyleCar, this);
             this.registry.events.off('changedata-carModel', this.restyleCar, this);
-            this.events.off(Phaser.Scenes.Events.PAUSE, quietEngine);
-            setEngine(false, 0);
         });
 
         const cam = this.cameras.main;
@@ -737,11 +731,7 @@ export class Driving extends Scene
         const speedAbs = Math.abs(this.speed);
         this.registry.set('speed', speedAbs);
 
-        //  ---- engine, brakes and crunches ----
-        //  Engine only sounds while he's actually driving under power — silent
-        //  when coasting or parked, so there's no annoying idle hum
-        setEngine(throttle > 0 && speedAbs > 8, speedAbs / 330);
-
+        //  ---- brakes and crunches ----
         this.brakeCooldown = Math.max(0, this.brakeCooldown - dt);
         this.crunchCooldown = Math.max(0, this.crunchCooldown - dt);
 

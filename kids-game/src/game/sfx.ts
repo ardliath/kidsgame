@@ -11,11 +11,6 @@ let master: GainNode | null = null;
 let unlocked = false;
 let muted = false;
 
-//  The engine is one oscillator that is SILENT unless he's actively driving,
-//  then a soft note whose pitch tracks speed — never a constant idle drone
-let engineOsc: OscillatorNode | null = null;
-let engineGain: GainNode | null = null;
-
 let musicTimer: number | null = null;
 let musicNextTime = 0;
 
@@ -58,7 +53,6 @@ export function initSfx ()
 
         unlocked = true;
         ctx.resume();
-        createEngine();
         startMusic();
 
         window.removeEventListener('pointerdown', unlock);
@@ -99,46 +93,6 @@ function suspend ()
     }
 
     ctx?.suspend();
-}
-
-function createEngine ()
-{
-    if (engineOsc || !ctx || !master)
-    {
-        return;
-    }
-
-    engineOsc = ctx.createOscillator();
-    engineOsc.type = 'sawtooth';
-    engineOsc.frequency.value = 70;
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 800;
-
-    engineGain = ctx.createGain();
-    engineGain.gain.value = 0;
-
-    engineOsc.connect(filter);
-    filter.connect(engineGain);
-    engineGain.connect(master);
-    engineOsc.start();
-}
-
-//  active = pedal down and moving; speedFrac 0..1 sets the pitch. When not
-//  active the engine fades to true silence — no idle hum.
-export function setEngine (active: boolean, speedFrac: number)
-{
-    if (!ctx || !engineOsc || !engineGain)
-    {
-        return;
-    }
-
-    const now = ctx.currentTime;
-    const frac = Math.max(0, Math.min(1, speedFrac));
-
-    engineOsc.frequency.linearRampToValueAtTime(70 + frac * 90, now + 0.12);
-    engineGain.gain.linearRampToValueAtTime(active ? 0.03 + frac * 0.07 : 0, now + (active ? 0.1 : 0.25));
 }
 
 export function playBrake ()
