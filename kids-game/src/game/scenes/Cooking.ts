@@ -14,6 +14,9 @@ const PALE_FOOD = 0xfff3c4;
 //  How far the jug/carton tips while pouring (radians, clockwise)
 const POUR_TILT = 0.5;
 
+//  How many recipe tiles fit on the "what shall we make?" screen at once
+const RECIPES_PER_PAGE = 3;
+
 export class Cooking extends Scene
 {
     config: RecipeConfig;
@@ -54,6 +57,9 @@ export class Cooking extends Scene
     houseId = '';
     pantry: Pantry = {};
 
+    //  Which page of the recipe picker we're looking at
+    recipePage = 0;
+
     constructor ()
     {
         super('Cooking');
@@ -69,6 +75,7 @@ export class Cooking extends Scene
         this.config = this.cache.json.get('recipes') as RecipeConfig;
         this.recipe = null;
         this.busy = false;
+        this.recipePage = 0;
 
         this.pantry = loadPantry();
 
@@ -146,9 +153,15 @@ export class Cooking extends Scene
             ? 0
             : Math.max(0, recipe.requiresCompleted - recipes.filter(r => r.id !== recipe.id && done.includes(r.id)).length);
 
-        recipes.forEach((recipe, i) => {
+        const pageCount = Math.ceil(recipes.length / RECIPES_PER_PAGE);
+        this.recipePage = Phaser.Math.Clamp(this.recipePage, 0, Math.max(0, pageCount - 1));
 
-            const x = CX + (i - (recipes.length - 1) / 2) * 300;
+        const pageStart = this.recipePage * RECIPES_PER_PAGE;
+        const pageRecipes = recipes.slice(pageStart, pageStart + RECIPES_PER_PAGE);
+
+        pageRecipes.forEach((recipe, i) => {
+
+            const x = CX + (i - (pageRecipes.length - 1) / 2) * 300;
             const y = 450;
             const left = remainingToUnlock(recipe);
             const locked = left > 0;
@@ -177,6 +190,38 @@ export class Cooking extends Scene
             }
 
         });
+
+        //  Paging arrows, only shown when there's somewhere else to page to —
+        //  keeps the picker from ever needing more than RECIPES_PER_PAGE
+        //  tiles in a row, however many dishes get added over time
+        if (this.recipePage > 0)
+        {
+            this.addPageArrow(90, -1);
+        }
+
+        if (this.recipePage < pageCount - 1)
+        {
+            this.addPageArrow(GAME_WIDTH - 90, 1);
+        }
+    }
+
+    addPageArrow (x: number, dir: number)
+    {
+        const y = 450;
+
+        this.stepLayer.add(this.add.circle(x, y, 56, 0x102027, 0.55).setStrokeStyle(4, 0xffffff, 0.6));
+
+        const tri = dir < 0
+            ? this.add.triangle(x, y, 40, 0, 40, 48, 0, 24, 0xffffff)
+            : this.add.triangle(x, y, 0, 0, 0, 48, 40, 24, 0xffffff);
+        this.stepLayer.add(tri);
+
+        const zone = this.add.zone(x, y, 130, 130).setInteractive();
+        zone.on('pointerdown', () => {
+            this.recipePage += dir;
+            this.showChoose();
+        });
+        this.stepLayer.add(zone);
     }
 
     startRecipe (recipe: RecipeDef)
