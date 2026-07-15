@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
-import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
+import { buildMap, DEFAULT_MAP, Edge, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
 import { initSfx, playBrake, playCrunch } from '../sfx';
 import { loadCarStyle, loadCoins, loadCurrentMap, loadFleet, pantryExists, saveCurrentMap, saveFleet, savePantry, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
@@ -69,6 +69,7 @@ export class Driving extends Scene
     startPos: { x: number; y: number };
     houses: PlacedHouse[] = [];
     sites: PlacedSite[] = [];
+    landmarks: PlacedLandmark[] = [];
     npcCars: NpcCarState[] = [];
     npcGroup: Phaser.Physics.Arcade.Group;
 
@@ -168,6 +169,7 @@ export class Driving extends Scene
         this.startPos = built.start;
         this.houses = built.houses;
         this.sites = built.sites;
+        this.landmarks = built.landmarks;
         this.bubbleTarget = null;
 
         this.physics.world.setBounds(0, 0, built.width, built.height);

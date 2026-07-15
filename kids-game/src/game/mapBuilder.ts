@@ -127,6 +127,18 @@ export interface PlacedNpcCar
     heading: number;
 }
 
+//  A distinctive, solid, non-interactive per-town structure (clock tower,
+//  windmill, pier, lighthouse) — see mapBuilder's placeLandmark
+export interface PlacedLandmark
+{
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    kind: 'clock-tower' | 'windmill' | 'pier' | 'lighthouse';
+}
+
 export interface BuiltMap
 {
     obstacles: Phaser.Physics.Arcade.StaticGroup;
@@ -137,9 +149,50 @@ export interface BuiltMap
     sites: PlacedSite[];
     npcCars: PlacedNpcCar[];
     yard: PlacedYard | null;
+    landmarks: PlacedLandmark[];
 }
 
 const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
+
+//  A house that's just a tile-grid character ('H' or a legend entry) rather
+//  than an authored object — shared between buildMap()'s data pass and
+//  anything else that needs to know where these are (e.g. delivery targets)
+export interface GridHouseSpec
+{
+    id: string;
+    col: number;
+    row: number;
+    colour?: string;
+    facing?: Edge;
+    sign?: string;
+}
+
+export function scanGridHouses (map: MapData): GridHouseSpec[]
+{
+    const rows = map.tiles.length;
+    const cols = map.tiles[0].length;
+    const found: GridHouseSpec[] = [];
+
+    for (let r = 0; r < rows; r++)
+    {
+        for (let c = 0; c < cols; c++)
+        {
+            const t = map.tiles[r][c];
+
+            if (t === 'H')
+            {
+                found.push({ id: `${map.id}-house-${c}x${r}`, col: c, row: r });
+            }
+            else if (t !== '.' && map.legend?.[t]?.type === 'house')
+            {
+                const entry = map.legend[t];
+                found.push({ id: `${map.id}-house-${c}x${r}`, col: c, row: r, colour: entry.colour, facing: entry.facing, sign: entry.sign });
+            }
+        }
+    }
+
+    return found;
+}
 
 export const NAMED_COLOURS: Record<string, number> = {
     red: 0xe53935,
@@ -203,7 +256,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' | 'cafe'; player?: boolean }
     interface SiteSpec { id: string; col: number; row: number; w: number; h: number }
-    interface LandmarkSpec { col: number; row: number; w: number; h: number; kind: 'clock-tower' | 'windmill' | 'pier' | 'lighthouse' }
+    interface LandmarkSpec { id: string; col: number; row: number; w: number; h: number; kind: 'clock-tower' | 'windmill' | 'pier' | 'lighthouse' }
 
     const builtHouses = loadBuiltHouses();
     const demolished = new Set(loadDemolished());
@@ -213,22 +266,9 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     const siteSpecs: SiteSpec[] = [];
     const landmarkSpecs: LandmarkSpec[] = [];
 
-    for (let r = 0; r < rows; r++)
+    for (const spec of scanGridHouses(map))
     {
-        for (let c = 0; c < cols; c++)
-        {
-            const t = map.tiles[r][c];
-
-            if (t === 'H')
-            {
-                houseSpecs.push({ id: `${map.id}-house-${c}x${r}`, col: c, row: r, w: 1, h: 1 });
-            }
-            else if (t !== '.' && map.legend?.[t]?.type === 'house')
-            {
-                const entry = map.legend[t];
-                houseSpecs.push({ id: `${map.id}-house-${c}x${r}`, col: c, row: r, w: 1, h: 1, colour: entry.colour, facing: entry.facing, sign: entry.sign });
-            }
-        }
+        houseSpecs.push({ ...spec, w: 1, h: 1 });
     }
 
     let yardObj: MapObject | null = null;
@@ -249,7 +289,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
         else if (obj.type === 'landmark' && obj.kind)
         {
-            landmarkSpecs.push({ col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1, kind: obj.kind });
+            landmarkSpecs.push({ id: obj.id ?? `${map.id}-landmark-${index}`, col: obj.col, row: obj.row, w: obj.w ?? 1, h: obj.h ?? 1, kind: obj.kind });
         }
 
     });
@@ -701,9 +741,20 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
+    const landmarks: PlacedLandmark[] = [];
+
     for (const spec of landmarkSpecs)
     {
         placeLandmark(spec.col, spec.row, spec.w, spec.h, spec.kind);
+
+        landmarks.push({
+            id: spec.id,
+            x: (spec.col + spec.w / 2) * TILE,
+            y: (spec.row + spec.h / 2) * TILE,
+            width: spec.w * TILE,
+            height: spec.h * TILE,
+            kind: spec.kind
+        });
     }
 
     //  Cars scattered along the roads. They drive themselves once the scene
@@ -746,7 +797,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
         : { x: width / 2, y: height / 2 };
 
-    return { obstacles, width, height, start, houses, sites, npcCars, yard };
+    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks };
 }
 
 //  The builders' yard: a fenced gravel plot the fleet parks in. The player
