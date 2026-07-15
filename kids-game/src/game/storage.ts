@@ -1,4 +1,5 @@
 import { CAR_MODELS, DEFAULT_MODEL } from './carShapes';
+import { DeliveryJob } from './deliveries';
 
 const SAVE_KEY = 'kids-game-save';
 const CAR_KEY = 'kids-game-car';
@@ -15,6 +16,7 @@ const PANTRY_KEY = 'kids-game-pantry';
 const MUTED_KEY = 'kids-game-muted';
 const COMPLETED_RECIPES_KEY = 'kids-game-recipes-done';
 const NAV_TARGET_KEY = 'kids-game-nav-target';
+const DELIVERY_KEY = 'kids-game-delivery';
 
 export interface SaveData
 {
@@ -485,6 +487,32 @@ export function saveNavTarget (target: NavTarget | null)
     catch
     {
         //  Ignore: the compass just won't remember its target next reload
+    }
+}
+
+//  The active delivery job, if any — null means no job offered/accepted
+export function loadDelivery (): DeliveryJob | null
+{
+    try
+    {
+        const raw = localStorage.getItem(DELIVERY_KEY);
+        return raw ? JSON.parse(raw) as DeliveryJob : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+export function saveDelivery (job: DeliveryJob | null)
+{
+    try
+    {
+        localStorage.setItem(DELIVERY_KEY, JSON.stringify(job));
+    }
+    catch
+    {
+        //  Ignore: worst case a job has to be re-generated next session
     }
 }
 

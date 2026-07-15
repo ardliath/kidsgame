@@ -1,0 +1,8 @@
+{
+    "parcels": [
+        { "id": "flowers", "name": "Flowers", "colour": "#e57373", "icon": "flowers" },
+        { "id": "cake", "name": "Cake", "colour": "#f8bbd0", "icon": "cake" },
+        { "id": "teddy", "name": "Teddy Bear", "colour": "#a1887f", "icon": "teddy" },
+        { "id": "parcel", "name": "Parcel", "colour": "#8d6e63", "icon": "box" }
+    ]
+}

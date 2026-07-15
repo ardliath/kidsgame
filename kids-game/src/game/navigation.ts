@@ -9,6 +9,7 @@ export interface NavDestination
     mapId: string;
     x: number;
     y: number;
+    type: 'yard' | 'shop' | 'landmark';
 }
 
 const SHOP_NAME: Record<string, string> = {
@@ -39,17 +40,17 @@ export function listKnownDestinations (allMaps: Record<string, MapData>): NavDes
 
             if (obj.type === 'yard')
             {
-                found.push({ id: obj.id ?? `${map.id}-yard`, name: 'Yard', mapId: map.id, x, y });
+                found.push({ id: obj.id ?? `${map.id}-yard`, name: 'Yard', mapId: map.id, x, y, type: 'yard' });
             }
             else if (obj.sign && obj.sells && obj.sells.length > 0)
             {
                 const kind = SHOP_NAME[obj.shopType ?? 'grocery'] ?? 'Shop';
-                found.push({ id: obj.id ?? `${map.id}-shop-${obj.col}x${obj.row}`, name: `${map.name} ${kind}`, mapId: map.id, x, y });
+                found.push({ id: obj.id ?? `${map.id}-shop-${obj.col}x${obj.row}`, name: `${map.name} ${kind}`, mapId: map.id, x, y, type: 'shop' });
             }
             else if (obj.type === 'landmark' && obj.kind)
             {
                 const kind = LANDMARK_NAME[obj.kind] ?? 'Landmark';
-                found.push({ id: obj.id ?? `${map.id}-landmark-${obj.col}x${obj.row}`, name: kind, mapId: map.id, x, y });
+                found.push({ id: obj.id ?? `${map.id}-landmark-${obj.col}x${obj.row}`, name: kind, mapId: map.id, x, y, type: 'landmark' });
             }
 
         });
