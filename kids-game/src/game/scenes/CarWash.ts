@@ -8,7 +8,12 @@ import { saveDirt } from '../storage';
 const CX = GAME_WIDTH / 2;
 const FLOOR_Y = 620;
 const CAR_SCALE = 1.6;
-const MAX_SCRUBS = 8;
+
+//  Seconds of continuous scrubbing to fully clean a maximally-dirty car;
+//  a lightly-dirty one takes proportionally less
+const MAX_SCRUB_SECONDS = 5;
+
+const SPONGE_BOUNDS = { minX: CX - 260, maxX: CX + 260, minY: FLOOR_Y - 260, maxY: FLOOR_Y - 20 };
 
 //  Rough, generic speckle spots spanning a car's body and window area —
 //  approximate on purpose (every model's silhouette differs a little), in
@@ -20,7 +25,15 @@ const SPECKLE_OFFSETS: { x: number; y: number }[] = [
 
 export class CarWash extends Scene
 {
-    scrubsLeft = 0;
+    startDirt = 0;
+    scrubElapsed = 0;
+    requiredSeconds = 0;
+    lastSavedDirt = 0;
+
+    scrubbing = false;
+    scrubPointerId = -1;
+    bubbleCooldown = 0;
+
     speckles: Phaser.GameObjects.Arc[] = [];
     sponge: Phaser.GameObjects.Container;
     doneText: Phaser.GameObjects.Text;
@@ -32,7 +45,10 @@ export class CarWash extends Scene
 
     create ()
     {
-        this.scrubsLeft = 0;
+        this.scrubElapsed = 0;
+        this.scrubbing = false;
+        this.scrubPointerId = -1;
+        this.bubbleCooldown = 0;
         this.speckles = [];
 
         this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xb3e5fc);
@@ -52,14 +68,17 @@ export class CarWash extends Scene
 
         const model = this.registry.get('carModel') as string;
         const colour = this.registry.get('carColour') as number;
-        const dirt = (this.registry.get('dirt') as number) ?? 0;
+
+        this.startDirt = (this.registry.get('dirt') as number) ?? 0;
+        this.lastSavedDirt = this.startDirt;
+        this.requiredSeconds = MAX_SCRUB_SECONDS * this.startDirt;
 
         const carShapes = buildCarShapesSide(this, model, colour);
         this.add.container(CX, FLOOR_Y - GROUND_Y, carShapes).setScale(CAR_SCALE);
 
-        this.scrubsLeft = Math.round(dirt * MAX_SCRUBS);
+        const initialCount = Math.round(this.startDirt * SPECKLE_OFFSETS.length);
 
-        for (let i = 0; i < this.scrubsLeft; i++)
+        for (let i = 0; i < initialCount; i++)
         {
             const offset = SPECKLE_OFFSETS[i];
             const speckle = this.add.circle(CX + offset.x * CAR_SCALE, FLOOR_Y + offset.y * CAR_SCALE, 11, 0x6d4c41, 0.55);
@@ -68,48 +87,164 @@ export class CarWash extends Scene
 
         this.doneText = this.add.text(CX, 400, 'All clean!', {
             fontFamily: 'Arial Black', fontSize: 40, color: '#2e7d32', stroke: '#ffffff', strokeThickness: 6
-        }).setOrigin(0.5).setVisible(this.scrubsLeft === 0);
+        }).setOrigin(0.5).setVisible(this.requiredSeconds <= 0);
 
-        //  The sponge: tap repeatedly over the car to wipe the speckles away
+        //  The sponge: drag it around over the car to scrub the dirt away
         const spongeBody = this.add.circle(0, 0, 34, 0xfff176).setStrokeStyle(4, 0xf9a825);
         this.sponge = this.add.container(CX, FLOOR_Y - 140, [ spongeBody ]);
 
-        this.add.zone(CX, FLOOR_Y - 140, 400, 300).setInteractive().on('pointerdown', () => this.scrub());
+        const zone = this.add.zone(CX, FLOOR_Y - 130, 560, 420);
+        zone.setInteractive();
+        zone.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.startScrub(pointer));
+
+        this.input.on('pointermove', this.onPointerMove, this);
+        this.input.on('pointerup', this.onPointerUp, this);
+        this.input.on('gameout', this.onPointerUp, this);
     }
 
-    scrub ()
+    startScrub (pointer: Phaser.Input.Pointer)
     {
-        if (this.scrubsLeft <= 0)
+        if (this.requiredSeconds <= 0)
         {
             return;
         }
 
-        this.tweens.add({ targets: this.sponge, scale: 1.2, duration: 90, yoyo: true });
+        this.scrubbing = true;
+        this.scrubPointerId = pointer.id;
         playSplash();
+        this.moveSponge(pointer);
+    }
 
-        this.scrubsLeft--;
-
-        const speckle = this.speckles.pop();
-
-        if (speckle)
+    onPointerMove (pointer: Phaser.Input.Pointer)
+    {
+        if (!this.scrubbing || pointer.id !== this.scrubPointerId)
         {
-            this.tweens.add({ targets: speckle, alpha: 0, scale: 0, duration: 200, onComplete: () => speckle.destroy() });
+            return;
         }
 
-        const model = this.registry.get('carModel') as string;
-        const dirt = this.scrubsLeft / MAX_SCRUBS;
+        this.moveSponge(pointer);
+    }
+
+    onPointerUp (pointer: Phaser.Input.Pointer)
+    {
+        if (pointer.id === this.scrubPointerId)
+        {
+            this.scrubbing = false;
+            this.scrubPointerId = -1;
+        }
+    }
+
+    moveSponge (pointer: Phaser.Input.Pointer)
+    {
+        const x = Phaser.Math.Clamp(pointer.x, SPONGE_BOUNDS.minX, SPONGE_BOUNDS.maxX);
+        const y = Phaser.Math.Clamp(pointer.y, SPONGE_BOUNDS.minY, SPONGE_BOUNDS.maxY);
+
+        this.sponge.setPosition(x, y);
+    }
+
+    update (_time: number, delta: number)
+    {
+        if (!this.scrubbing || this.requiredSeconds <= 0)
+        {
+            return;
+        }
+
+        const dt = delta / 1000;
+
+        this.bubbleCooldown -= dt;
+
+        if (this.bubbleCooldown <= 0)
+        {
+            this.spawnBubble(this.sponge.x, this.sponge.y);
+            this.bubbleCooldown = 0.12;
+        }
+
+        this.scrubElapsed = Math.min(this.requiredSeconds, this.scrubElapsed + dt);
+
+        const progress = this.scrubElapsed / this.requiredSeconds;
+        const dirt = this.startDirt * (1 - progress);
+
+        for (const speckle of this.speckles)
+        {
+            speckle.setAlpha(0.55 * (1 - progress));
+        }
 
         this.registry.set('dirt', dirt);
-        saveDirt(model, dirt);
 
-        if (this.scrubsLeft <= 0)
+        if (Math.abs(dirt - this.lastSavedDirt) >= 0.01)
         {
-            this.doneText.setVisible(true);
+            saveDirt(this.registry.get('carModel') as string, dirt);
+            this.lastSavedDirt = dirt;
+        }
+
+        if (progress >= 1)
+        {
+            this.finishWash();
+        }
+    }
+
+    spawnBubble (x: number, y: number)
+    {
+        const bubble = this.add.circle(
+            x + Phaser.Math.Between(-24, 24), y + Phaser.Math.Between(-24, 24),
+            Phaser.Math.Between(5, 10), 0xffffff, 0.7
+        );
+        bubble.setStrokeStyle(2, 0xb3e5fc, 0.9);
+
+        this.tweens.add({
+            targets: bubble,
+            y: bubble.y - 26,
+            scale: 1.5,
+            alpha: 0,
+            duration: 500,
+            ease: 'Cubic.Out',
+            onComplete: () => bubble.destroy()
+        });
+    }
+
+    finishWash ()
+    {
+        this.scrubbing = false;
+        this.scrubPointerId = -1;
+        this.requiredSeconds = 0;
+
+        const model = this.registry.get('carModel') as string;
+        this.registry.set('dirt', 0);
+        saveDirt(model, 0);
+        this.lastSavedDirt = 0;
+
+        for (const speckle of this.speckles)
+        {
+            speckle.destroy();
+        }
+
+        this.speckles = [];
+        this.doneText.setVisible(true);
+
+        //  A little rinse of water droplets to mark the finish
+        for (let i = 0; i < 10; i++)
+        {
+            const angle = (i / 10) * Math.PI * 2;
+            const drop = this.add.circle(this.sponge.x, this.sponge.y, 8, [ 0xffffff, 0xb3e5fc, 0x4fc3f7 ][i % 3]);
+
+            this.tweens.add({
+                targets: drop,
+                x: this.sponge.x + Math.cos(angle) * 110,
+                y: this.sponge.y + Math.sin(angle) * 110,
+                alpha: 0,
+                duration: 650,
+                ease: 'Cubic.Out',
+                onComplete: () => drop.destroy()
+            });
         }
     }
 
     close ()
     {
+        //  Flush whatever's live in the registry, in case the last in-progress
+        //  update() tick hadn't crossed the throttled-save threshold yet
+        saveDirt(this.registry.get('carModel') as string, (this.registry.get('dirt') as number) ?? this.startDirt);
+
         this.scene.resume('Yard');
         this.scene.stop();
     }
