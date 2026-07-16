@@ -1,6 +1,7 @@
 import { Boot } from './scenes/Boot';
 import { Builder } from './scenes/Builder';
 import { Cafe } from './scenes/Cafe';
+import { CarWash } from './scenes/CarWash';
 import { Cooking } from './scenes/Cooking';
 import { Dashboard } from './scenes/Dashboard';
 import { DeliveryBoard } from './scenes/DeliveryBoard';
@@ -44,7 +45,8 @@ const config: Phaser.Types.Core.GameConfig = {
         Cafe,
         MiniMap,
         Yard,
-        DeliveryBoard
+        DeliveryBoard,
+        CarWash
     ]
 };
 

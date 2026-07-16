@@ -32,6 +32,13 @@ const FUEL_FULL_PRICE = 10;
 //  Seconds of continuous driving to go from spotless to fully dirty
 const DIRT_ACCUM_SECONDS = 720;
 
+//  Small low-alpha speckles overlaid on the top-down car, one per position
+//  filled in as dirt climbs — a cheap "he could do with a wash" tell
+const DIRT_SPECKLE_OFFSETS: { x: number; y: number }[] = [
+    { x: -12, y: -18 }, { x: 10, y: -8 }, { x: -8, y: 6 },
+    { x: 12, y: 18 }, { x: -14, y: 22 }, { x: 6, y: -22 }
+];
+
 //  NPC traffic: a gentle constant speed, and the four directions they can
 //  choose between at each tile centre
 const NPC_SPEED = 80;
@@ -84,6 +91,11 @@ export class Driving extends Scene
     car: Phaser.GameObjects.Container;
     speed = 0;
     heading = 0;
+
+    //  Dirt speckles overlaid on the driven car, refreshed only when the
+    //  filled-in count actually changes
+    dirtSpeckles: Phaser.GameObjects.Arc[] = [];
+    dirtSpeckleCount = 0;
 
     map: MapData;
     mapWidth = 0;
@@ -251,6 +263,10 @@ export class Driving extends Scene
         this.car = this.buildCar(spawn.x, spawn.y);
         this.car.rotation = this.heading;
 
+        this.dirtSpeckles = [];
+        this.dirtSpeckleCount = 0;
+        this.updateDirtSpeckles();
+
         this.physics.add.collider(this.car, built.obstacles);
 
         this.setupNpcCars(built.npcCars, built.obstacles);
@@ -259,6 +275,7 @@ export class Driving extends Scene
         //  Repaint the car when the options screen changes it
         this.registry.events.on('changedata-carColour', this.restyleCar, this);
         this.registry.events.on('changedata-carModel', this.restyleCar, this);
+        this.registry.events.on('changedata-dirt', this.updateDirtSpeckles, this);
 
         //  Sound: start the audio and reset the per-life trigger state
         initSfx();
@@ -270,6 +287,7 @@ export class Driving extends Scene
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.registry.events.off('changedata-carColour', this.restyleCar, this);
             this.registry.events.off('changedata-carModel', this.restyleCar, this);
+            this.registry.events.off('changedata-dirt', this.updateDirtSpeckles, this);
 
             //  Flush the outgoing vehicle's tank and dirt so the next create()
             //  (a new town, or a different vehicle entirely) reads an
@@ -814,6 +832,41 @@ export class Driving extends Scene
     {
         this.car.removeAll(true);
         this.car.add(buildCarShapes(this, this.registry.get('carModel') as string, this.registry.get('carColour') as number));
+
+        //  removeAll() just destroyed any speckles along with everything
+        //  else, so force a full rebuild rather than trusting the count check
+        this.dirtSpeckles = [];
+        this.dirtSpeckleCount = 0;
+        this.updateDirtSpeckles();
+    }
+
+    updateDirtSpeckles ()
+    {
+        const dirt = (this.registry.get('dirt') as number) ?? 0;
+        const count = Math.round(dirt * DIRT_SPECKLE_OFFSETS.length);
+
+        if (count === this.dirtSpeckleCount)
+        {
+            return;
+        }
+
+        this.dirtSpeckleCount = count;
+
+        for (const speckle of this.dirtSpeckles)
+        {
+            speckle.destroy();
+        }
+
+        this.dirtSpeckles = [];
+
+        for (let i = 0; i < count; i++)
+        {
+            const offset = DIRT_SPECKLE_OFFSETS[i];
+            const speckle = this.add.circle(offset.x, offset.y, 4, 0x6d4c41, 0.4);
+
+            this.car.add(speckle);
+            this.dirtSpeckles.push(speckle);
+        }
     }
 
     //  ---- The player's parked fleet: vehicles left out, and the ones at home ----

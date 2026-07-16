@@ -165,6 +165,36 @@ export function playCrunch ()
     thud.stop(now + 0.22);
 }
 
+export function playSplash ()
+{
+    if (!ctx || !master)
+    {
+        return;
+    }
+
+    const now = ctx.currentTime;
+
+    const source = ctx.createBufferSource();
+    source.buffer = noiseBuffer();
+
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(2200, now);
+    band.frequency.exponentialRampToValueAtTime(900, now + 0.15);
+    band.Q.value = 1.2;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.28, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+
+    source.connect(band);
+    band.connect(gain);
+    gain.connect(master);
+    source.start(now);
+    source.stop(now + 0.2);
+}
+
 export function playHorn ()
 {
     //  Make absolutely sure the context exists and is actually running —

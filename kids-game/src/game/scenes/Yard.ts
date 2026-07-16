@@ -91,6 +91,33 @@ export class Yard extends Scene
             this.add.zone(x, y, 230, 190).setInteractive().on('pointerdown', () => this.pickVehicle(model.key));
 
         });
+
+        //  The one empty slot in the 4-across, 2-row grid — Car Wash, not
+        //  a vehicle card
+        const washX = CX - 3 * 125 + 3 * 250;
+        const washY = 380 + 210;
+
+        const washCard = this.add.rectangle(washX, washY, 220, 180, 0x0277bd);
+        washCard.setStrokeStyle(6, 0x01579b);
+
+        this.add.circle(washX, washY - 30, 30, 0x4fc3f7).setStrokeStyle(4, 0x0288d1);
+        this.add.text(washX, washY - 30, '🧽', { fontSize: 34 }).setOrigin(0.5);
+
+        this.add.text(washX, washY + 52, 'Car Wash', {
+            fontFamily: 'Arial Black', fontSize: 22, color: '#ffffff'
+        }).setOrigin(0.5);
+
+        this.add.text(washX, washY + 78, 'Give it a scrub', {
+            fontFamily: 'Arial Black', fontSize: 15, color: '#b3e5fc'
+        }).setOrigin(0.5);
+
+        this.add.zone(washX, washY, 230, 190).setInteractive().on('pointerdown', () => this.openCarWash());
+    }
+
+    openCarWash ()
+    {
+        this.scene.launch('CarWash');
+        this.scene.pause();
     }
 
     //  Whether the given world position sits inside the yard, in which case
