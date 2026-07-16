@@ -639,24 +639,37 @@ export class Driving extends Scene
         //  or house (e.g. picking up from a café you could otherwise browse)
         //  — checked separately, and given first claim on `best` below, so it
         //  always wins that tie rather than losing to whichever happened to
-        //  be pushed into `candidates` first.
+        //  be pushed into `candidates` first. Its hit-box must match the real
+        //  building's own width/height, not a guessed fixed size — a bigger
+        //  building (like the ice cream parlour) has a bigger SHOP/TREAT
+        //  hit-box than an undersized fixed one, letting it register as
+        //  "closer" and win over PICKUP/DELIVER anywhere near the edges.
         const job = this.deliveryJob;
         const currentMapId = this.registry.get('mapId') as string;
         let deliveryCandidate: { distance: number; target: ActionTarget } | null = null;
 
         if (job && job.state === 'accepted' && job.pickupMapId === currentMapId)
         {
-            const dx = Math.max(Math.abs(this.car.x - job.pickupX) - 80, 0);
-            const dy = Math.max(Math.abs(this.car.y - job.pickupY) - 80, 0);
+            const pickupHouse = this.houses.find(h => h.id === job.pickupId);
+            const w = pickupHouse?.width ?? 160;
+            const h = pickupHouse?.height ?? 160;
 
-            deliveryCandidate = { distance: Math.hypot(dx, dy), target: { kind: 'pickup', x: job.pickupX, y: job.pickupY, height: 160 } };
+            const dx = Math.max(Math.abs(this.car.x - job.pickupX) - w / 2, 0);
+            const dy = Math.max(Math.abs(this.car.y - job.pickupY) - h / 2, 0);
+
+            deliveryCandidate = { distance: Math.hypot(dx, dy), target: { kind: 'pickup', x: job.pickupX, y: job.pickupY, height: h } };
         }
         else if (job && job.state === 'carrying' && job.dropoffMapId === currentMapId)
         {
-            const dx = Math.max(Math.abs(this.car.x - job.dropoffX) - 80, 0);
-            const dy = Math.max(Math.abs(this.car.y - job.dropoffY) - 80, 0);
+            const dropoffHouse = this.houses.find(h => h.id === job.dropoffId);
+            const dropoffLandmark = this.landmarks.find(l => l.id === job.dropoffId);
+            const w = dropoffHouse?.width ?? dropoffLandmark?.width ?? 160;
+            const h = dropoffHouse?.height ?? dropoffLandmark?.height ?? 160;
 
-            deliveryCandidate = { distance: Math.hypot(dx, dy), target: { kind: 'deliver', x: job.dropoffX, y: job.dropoffY, height: 160 } };
+            const dx = Math.max(Math.abs(this.car.x - job.dropoffX) - w / 2, 0);
+            const dy = Math.max(Math.abs(this.car.y - job.dropoffY) - h / 2, 0);
+
+            deliveryCandidate = { distance: Math.hypot(dx, dy), target: { kind: 'deliver', x: job.dropoffX, y: job.dropoffY, height: h } };
         }
 
         let best: ActionTarget | null = null;
