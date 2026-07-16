@@ -410,6 +410,13 @@ export class Dashboard extends Scene
 
     openDelivery ()
     {
+        const driving = this.scene.get('Driving') as Driving;
+
+        if (!driving?.deliveryJob)
+        {
+            return;
+        }
+
         this.releaseControls();
 
         this.scene.pause('Driving');
@@ -527,8 +534,11 @@ export class Dashboard extends Scene
         this.wheel.rotation = this.wheelRotation;
         this.registry.set('steering', this.wheelRotation / MAX_TURN);
 
-        //  Wiggle the delivery icon while a job is waiting to be accepted
+        //  Hide the icon entirely when there's nothing to deliver, and
+        //  wiggle it while a job is waiting to be accepted
         const driving = this.scene.get('Driving') as Driving;
+        this.deliveryIcon.setVisible(!!driving?.deliveryJob);
+
         const offered = driving?.deliveryJob?.state === 'offered';
 
         if (offered && !this.deliveryWiggle)

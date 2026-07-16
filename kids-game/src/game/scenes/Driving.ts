@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
-import { DeliveriesConfig, DeliveryJob } from '../deliveries';
+import { DeliveriesConfig, DeliveryJob, generateJob } from '../deliveries';
 import { buildMap, DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch } from '../sfx';
@@ -159,6 +159,8 @@ export class Driving extends Scene
                 this.allMaps[id] = data;
             }
         }
+
+        this.ensureDeliveryOffered();
 
         //  First boot only — map changes keep whatever the player was doing
         if (this.registry.get('gear') === undefined)
@@ -437,6 +439,29 @@ export class Driving extends Scene
         else if (job && job.state === 'carrying')
         {
             this.setNavTarget({ id: job.dropoffId, name: job.dropoffName, mapId: job.dropoffMapId, x: job.dropoffX, y: job.dropoffY });
+        }
+        else if (!job)
+        {
+            //  Never leave him with nothing offered — the dashboard icon
+            //  only has something to wiggle about if a job actually exists
+            this.ensureDeliveryOffered();
+        }
+    }
+
+    ensureDeliveryOffered ()
+    {
+        if (this.deliveryJob)
+        {
+            return;
+        }
+
+        const config = this.cache.json.get('deliveries') as DeliveriesConfig | undefined;
+        const job = config ? generateJob(this.allMaps, config.parcels) : null;
+
+        if (job)
+        {
+            this.deliveryJob = job;
+            saveDelivery(job);
         }
     }
 
