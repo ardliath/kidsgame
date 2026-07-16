@@ -44,6 +44,7 @@ export class Preloader extends Scene
         this.load.json('icecream', 'icecream.json');
         this.load.json('coffee', 'coffee.json');
         this.load.json('deliveries', 'deliveries.json');
+        this.load.json('chippy', 'chippy.json');
     }
 
     create ()

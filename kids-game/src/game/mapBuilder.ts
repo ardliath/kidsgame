@@ -44,7 +44,7 @@ export interface MapObject
     //  A signed building with a sells list is a shop. 'grocery' sells
     //  cooking ingredients; 'treat' is an eat-it-now shop like ice cream.
     sells?: string[];
-    shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol';
+    shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy';
 
     //  The player's own home: painted his car colour, name over the door,
     //  and never demolished.
@@ -88,7 +88,7 @@ export interface PlacedHouse
     colour: number;
     sign?: string;
     sells?: string[];
-    shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol';
+    shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy';
 }
 
 //  A construction site that hasn't been built on yet
@@ -254,7 +254,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     //  ---- Data pass: decide what stands where before drawing anything ----
 
-    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol'; player?: boolean }
+    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy'; player?: boolean }
     interface SiteSpec { id: string; col: number; row: number; w: number; h: number }
     interface LandmarkSpec { id: string; col: number; row: number; w: number; h: number; kind: 'clock-tower' | 'windmill' | 'pier' | 'lighthouse' }
 
@@ -454,7 +454,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     //  Shared by plain H tiles, legend characters and map objects.
     //  Every house gets a unique, stable id.
-    const placeHouse = (id: string, col: number, row: number, w: number, h: number, colourName?: string, facing?: Edge, sign?: string, sells?: string[], shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol', player?: boolean) => {
+    const placeHouse = (id: string, col: number, row: number, w: number, h: number, colourName?: string, facing?: Edge, sign?: string, sells?: string[], shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy', player?: boolean) => {
 
         if (usedIds.has(id))
         {

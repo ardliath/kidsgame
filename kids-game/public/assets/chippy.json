@@ -1,0 +1,19 @@
+{
+    "maxChips": 3,
+    "chipsPrice": 1,
+    "chipsColour": "#f4b942",
+    "fish": [
+        { "id": "cod", "name": "Cod", "colour": "#f0dcae", "price": 2 },
+        { "id": "haddock", "name": "Haddock", "colour": "#e8cf9c", "price": 2 },
+        { "id": "sausage", "name": "Sausage", "colour": "#8d5524", "price": 1 },
+        { "id": "plain", "name": "Just Chips", "colour": "#f4b942", "price": 0 }
+    ],
+    "sauces": [
+        { "id": "ketchup", "name": "Ketchup", "colour": "#c62828", "price": 0 },
+        { "id": "curry", "name": "Curry Sauce", "colour": "#c68e17", "price": 1 },
+        { "id": "gravy", "name": "Gravy", "colour": "#6d4c41", "price": 1 }
+    ],
+    "extras": [
+        { "id": "saltvinegar", "name": "Salt & Vinegar", "colour": "#ffffff", "price": 0 }
+    ]
+}

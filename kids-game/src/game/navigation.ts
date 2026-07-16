@@ -15,7 +15,8 @@ export interface NavDestination
 const SHOP_NAME: Record<string, string> = {
     grocery: 'Shop',
     treat: 'Ice Cream',
-    cafe: 'Café'
+    cafe: 'Café',
+    chippy: 'Chippy'
 };
 
 const LANDMARK_NAME: Record<string, string> = {

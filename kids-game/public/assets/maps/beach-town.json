@@ -42,6 +42,19 @@
             "facing": "west",
             "sign": "PETROL",
             "shopType": "petrol"
+        },
+        {
+            "id": "chippy-shop",
+            "type": "house",
+            "col": 4,
+            "row": 3,
+            "w": 2,
+            "h": 1,
+            "colour": "blue",
+            "facing": "east",
+            "sign": "CHIPPY",
+            "sells": [ "cod", "haddock", "sausage", "plain" ],
+            "shopType": "chippy"
         }
     ],
     "cars": [
