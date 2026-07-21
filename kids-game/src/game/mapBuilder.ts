@@ -551,15 +551,24 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         if (alreadyRoad)
         {
             //  Only a genuine crossing if a PERPENDICULAR road already runs
-            //  through the target — a target paved by this stub's own
-            //  straight/corner build (however many pieces ago) never has
-            //  road to either side of that axis, so it's simply done, not
-            //  a bridge/tunnel opportunity
+            //  through the target *independently* — a perpendicular
+            //  neighbour that's road only because the target itself later
+            //  grew a child stub that way (a corner turn continuing this
+            //  same path) doesn't count, or every corner would wrongly
+            //  resurface its parent stub as a "crossing" once built
             const perpendicular: Edge[] = (stub.edge === 'north' || stub.edge === 'south') ? [ 'east', 'west' ] : [ 'north', 'south' ];
 
             const isCrossing = perpendicular.some(side => {
                 const [ pdx, pdy ] = EDGE_DELTA[side];
-                return tileAt(targetCol + pdx, targetRow + pdy) === 'R';
+
+                if (tileAt(targetCol + pdx, targetRow + pdy) !== 'R')
+                {
+                    return false;
+                }
+
+                const grownFromTarget = candidateStubs.some(s => s.col === targetCol && s.row === targetRow && s.edge === side);
+
+                return !grownFromTarget;
             });
 
             if (!isCrossing || crossingByTile.has(`${targetCol},${targetRow}`))

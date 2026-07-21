@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { Edge, mapCacheKey, MapData, PlacedRoadStub, TILE } from '../mapBuilder';
+import { Edge, mapCacheKey, MapData, OPPOSITE_EDGE, PlacedRoadStub, TILE } from '../mapBuilder';
 import { ExtraRoadTile, loadCoins, saveCoins, saveExtraExit, saveExtraRoad, saveExtraStub, saveUnlockedTown } from '../storage';
 import { Driving } from './Driving';
 
@@ -15,17 +15,14 @@ const ROAD_REWARD = 5;
 //  Taps needed to pave the tile, mirrors Cooking.ts's stir-counter idiom
 const PAVES_NEEDED = 3;
 
-//  Relative to the direction of travel into the target tile (the stub's
-//  own edge), which absolute compass side is "left" and "right" — turning
-//  right from facing north means facing east, and so on round the compass
-const LEFT_OF: Record<Edge, Edge> = { north: 'west', east: 'north', south: 'east', west: 'south' };
-const RIGHT_OF: Record<Edge, Edge> = { north: 'east', east: 'south', south: 'west', west: 'north' };
+//  The direction-picker grid: a true compass layout (north always up)
+//  around the target tile, so a tile's real screen offset always matches
+//  its real compass side — no canonical/abstract left-right relabelling
+const GRID_TILE = 150;
 
-interface Piece
-{
-    label: string;
-    sides: Edge[];
-}
+const DIR_OFFSET: Record<Edge, [number, number]> = {
+    north: [ 0, -GRID_TILE ], south: [ 0, GRID_TILE ], east: [ GRID_TILE, 0 ], west: [ -GRID_TILE, 0 ]
+};
 
 export class RoadBuilder extends Scene
 {
@@ -69,7 +66,7 @@ export class RoadBuilder extends Scene
     {
         this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x7cb342);
 
-        const title = this.stub.unlocksMap ? 'Build the road out of town!' : this.stub.isCrossing ? 'A road crosses here!' : 'Pick a piece to build!';
+        const title = this.stub.unlocksMap ? 'Build the road out of town!' : this.stub.isCrossing ? 'A road crosses here!' : 'Where should the road go?';
 
         this.instruction = this.add.text(CX, 90, title, {
             fontFamily: 'Arial Black', fontSize: 44, color: '#ffffff',
@@ -91,27 +88,80 @@ export class RoadBuilder extends Scene
             return;
         }
 
-        //  A canonical two-tile preview — the existing road on the left
-        //  connecting to the new grass tile on the right — rather than a
-        //  literal replay of the map's own orientation. Already-road tiles
-        //  (a crossing) preview grey from the start, since there's nothing
-        //  new to pave there.
-        this.add.rectangle(CX - PREVIEW_TILE / 2 - 20, TILE_Y, PREVIEW_TILE, PREVIEW_TILE, 0x9e9e9e).setStrokeStyle(4, 0x616161);
-        this.add.rectangle(CX - PREVIEW_TILE / 2 - 20, TILE_Y, PREVIEW_TILE - 40, 24, 0xffffff, 0.6);
-
-        const newTileColour = this.stub.isCrossing ? 0x9e9e9e : 0x7cb342;
-        const newTileStroke = this.stub.isCrossing ? 0x616161 : 0x33691e;
-
-        this.newTile = this.add.rectangle(CX + PREVIEW_TILE / 2 + 20, TILE_Y, PREVIEW_TILE, PREVIEW_TILE, newTileColour).setStrokeStyle(4, newTileStroke);
-
         if (this.stub.isCrossing)
         {
+            //  A canonical two-tile preview — the existing road on the left
+            //  connecting to the already-road tile on the right — since
+            //  there's nothing new to pave here, just a choice to make
+            this.add.rectangle(CX - PREVIEW_TILE / 2 - 20, TILE_Y, PREVIEW_TILE, PREVIEW_TILE, 0x9e9e9e).setStrokeStyle(4, 0x616161);
+            this.add.rectangle(CX - PREVIEW_TILE / 2 - 20, TILE_Y, PREVIEW_TILE - 40, 24, 0xffffff, 0.6);
+
+            this.newTile = this.add.rectangle(CX + PREVIEW_TILE / 2 + 20, TILE_Y, PREVIEW_TILE, PREVIEW_TILE, 0x9e9e9e).setStrokeStyle(4, 0x616161);
+
             this.showCrossingChoice();
+
+            return;
         }
-        else
+
+        this.showDirectionPicker();
+    }
+
+    //  A real, true-compass snapshot of the target tile and its neighbours
+    //  (north always up, matching the actual map) — grass sides you can
+    //  grow into are tappable, anything blocked or already road is shown
+    //  as it really is, so a loop or a crossing is something you can see
+    //  coming rather than discover afterwards
+    showDirectionPicker ()
+    {
+        const entrySide = OPPOSITE_EDGE[this.stub.edge];
+        const valid = new Set(this.stub.validSides);
+        const otherSides: Edge[] = ([ 'north', 'south', 'east', 'west' ] as Edge[]).filter(side => side !== entrySide);
+
+        const [ ex, ey ] = DIR_OFFSET[entrySide];
+        this.add.rectangle(CX + ex, TILE_Y + ey, GRID_TILE, GRID_TILE, 0x555555).setStrokeStyle(4, 0x333333);
+
+        this.newTile = this.add.rectangle(CX, TILE_Y, GRID_TILE, GRID_TILE, 0x7cb342).setStrokeStyle(4, 0x33691e);
+
+        for (const side of otherSides)
         {
-            this.showPalette();
+            const [ dx, dy ] = DIR_OFFSET[side];
+            const x = CX + dx;
+            const y = TILE_Y + dy;
+
+            if (valid.has(side))
+            {
+                const tile = this.add.rectangle(0, 0, GRID_TILE - 6, GRID_TILE - 6, 0x9ccc65).setStrokeStyle(4, 0x558b2f);
+                const container = this.add.container(x, y, [ tile ]);
+
+                const zone = this.add.zone(0, 0, GRID_TILE, GRID_TILE).setInteractive();
+                zone.on('pointerdown', () => this.pickDirection(side));
+                container.add(zone);
+
+                this.paletteZones.push(container);
+            }
+            else
+            {
+                this.add.rectangle(x, y, GRID_TILE - 6, GRID_TILE - 6, 0x000000, 0.15).setStrokeStyle(3, 0x000000, 0.25);
+            }
         }
+
+        this.paletteZones.push(this.makeChoiceButton(CX, 760, 'FINISH', 0x616161, () => this.pickDirection(null)));
+    }
+
+    pickDirection (side: Edge | null)
+    {
+        this.chosenSides = side ? [ side ] : [];
+
+        for (const zone of this.paletteZones)
+        {
+            zone.destroy();
+        }
+
+        this.paletteZones = [];
+
+        this.instruction.setText(`Pave it! (${this.pavesLeft} left)`);
+        this.newTile.setInteractive();
+        this.newTile.on('pointerdown', () => this.paveTap());
     }
 
     //  A signpost preview of the town this stub would open up, in the same
@@ -141,92 +191,6 @@ export class RoadBuilder extends Scene
         this.paletteZones = [];
 
         this.finish();
-    }
-
-    //  Every piece the palette could ever offer, filtered down to only the
-    //  ones every one of their sides is currently buildable on this stub
-    buildPieces (): Piece[]
-    {
-        const straight = this.stub.edge;
-        const left = LEFT_OF[this.stub.edge];
-        const right = RIGHT_OF[this.stub.edge];
-        const valid = new Set(this.stub.validSides);
-
-        const candidates: Piece[] = [
-            { label: 'STRAIGHT', sides: [ straight ] },
-            { label: 'LEFT', sides: [ left ] },
-            { label: 'RIGHT', sides: [ right ] },
-            { label: 'T (LEFT)', sides: [ straight, left ] },
-            { label: 'T (RIGHT)', sides: [ straight, right ] },
-            { label: 'CROSSROAD', sides: [ straight, left, right ] }
-        ];
-
-        return candidates.filter(piece => piece.sides.every(side => valid.has(side)));
-    }
-
-    showPalette ()
-    {
-        const pieces = this.buildPieces();
-        const slotWidth = 190;
-        const startX = CX - ((pieces.length - 1) * slotWidth) / 2;
-
-        pieces.forEach((piece, i) => {
-
-            const x = startX + i * slotWidth;
-
-            const bg = this.add.graphics();
-            bg.fillStyle(0x616161, 1);
-            bg.fillRoundedRect(-80, -55, 160, 110, 16);
-            bg.lineStyle(5, 0x212121, 1);
-            bg.strokeRoundedRect(-80, -55, 160, 110, 16);
-
-            const icon = this.drawPieceIcon(piece.sides);
-            const label = this.add.text(0, 78, piece.label, {
-                fontFamily: 'Arial Black', fontSize: 22, color: '#ffffff'
-            }).setOrigin(0.5);
-
-            const container = this.add.container(x, 760, [ bg, icon, label ]);
-
-            const zone = this.add.zone(0, 0, 190, 150).setInteractive();
-            zone.on('pointerdown', () => this.pickPiece(piece.sides));
-            container.add(zone);
-
-            this.paletteZones.push(container);
-
-        });
-    }
-
-    //  A tiny top-down road icon: a stub of road drawn toward each side the
-    //  piece opens, meeting in the middle
-    drawPieceIcon (sides: Edge[]): Phaser.GameObjects.Container
-    {
-        const parts: Phaser.GameObjects.GameObject[] = [ this.add.rectangle(0, 0, 28, 28, 0x424242) ];
-
-        for (const side of sides)
-        {
-            if (side === 'north') parts.push(this.add.rectangle(0, -22, 24, 30, 0x424242));
-            else if (side === 'south') parts.push(this.add.rectangle(0, 22, 24, 30, 0x424242));
-            else if (side === 'east') parts.push(this.add.rectangle(22, 0, 30, 24, 0x424242));
-            else parts.push(this.add.rectangle(-22, 0, 30, 24, 0x424242));
-        }
-
-        return this.add.container(0, -10, parts);
-    }
-
-    pickPiece (sides: Edge[])
-    {
-        this.chosenSides = sides;
-
-        for (const zone of this.paletteZones)
-        {
-            zone.destroy();
-        }
-
-        this.paletteZones = [];
-
-        this.instruction.setText(`Pave it! (${this.pavesLeft} left)`);
-        this.newTile.setInteractive();
-        this.newTile.on('pointerdown', () => this.paveTap());
     }
 
     //  A perpendicular road already runs through the target tile — offer to
