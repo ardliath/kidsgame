@@ -26,6 +26,10 @@ export const EDGE_ROTATION: Record<Edge, number> = {
     north: 0, south: Math.PI, east: Math.PI / 2, west: -Math.PI / 2
 };
 
+export const OPPOSITE_EDGE: Record<Edge, Edge> = {
+    north: 'south', south: 'north', east: 'west', west: 'east'
+};
+
 //  Custom characters a map can define for its tile grid
 export interface LegendEntry
 {
@@ -134,6 +138,11 @@ export interface PlacedRoadStub
     height: number;
     edge: Edge;
     unlocksMap?: string;
+
+    //  Which of the target tile's other 3 sides are currently buildable —
+    //  in bounds, plain grass, not already reserved by a house/site/yard/
+    //  another stub. Lets RoadBuilder offer only pieces the terrain allows.
+    validSides: Edge[];
 }
 
 //  The builders' yard: where the fleet parks. `spawn*` is the road tile the
@@ -186,6 +195,11 @@ export interface BuiltMap
     yard: PlacedYard | null;
     landmarks: PlacedLandmark[];
     roadStubs: PlacedRoadStub[];
+
+    //  "col,row" keys the player has paved since — the same overlay tileAt()
+    //  consults, exposed so traffic routing can see player-built road too
+    //  instead of only ever reading the static tile grid
+    extraRoads: Set<string>;
 }
 
 const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
@@ -477,6 +491,37 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
         activeStubs.push({ stub, targetCol, targetRow });
         markFootprint(targetCol, targetRow, 1, 1);
+    }
+
+    //  Which of each target tile's other 3 sides a piece could open —
+    //  computed only after every active stub has reserved its own target
+    //  above, so two stubs can't both claim the same neighbouring tile
+    const stubValidSides = new Map<string, Edge[]>();
+
+    for (const { stub, targetCol, targetRow } of activeStubs)
+    {
+        const entrySide = OPPOSITE_EDGE[stub.edge];
+        const otherSides = (Object.keys(EDGE_DELTA) as Edge[]).filter(e => e !== entrySide);
+        const valid: Edge[] = [];
+
+        for (const side of otherSides)
+        {
+            const [ sdx, sdy ] = EDGE_DELTA[side];
+            const nc = targetCol + sdx;
+            const nr = targetRow + sdy;
+
+            if (nr < 0 || nr >= rows || nc < 0 || nc >= cols)
+            {
+                continue;
+            }
+
+            if (tileAt(nc, nr) === '.' && !occupied.has(`${nc},${nr}`))
+            {
+                valid.push(side);
+            }
+        }
+
+        stubValidSides.set(stub.id, valid);
     }
 
     const pickEmptyGrass = (): { col: number; row: number } | null => {
@@ -848,7 +893,10 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
         placeRoadStubMarker(tx, ty, stub.edge);
 
-        return { id: stub.id, x: tx, y: ty, width: TILE - 20, height: TILE - 20, edge: stub.edge, unlocksMap: stub.unlocksMap };
+        return {
+            id: stub.id, x: tx, y: ty, width: TILE - 20, height: TILE - 20, edge: stub.edge, unlocksMap: stub.unlocksMap,
+            validSides: stubValidSides.get(stub.id) ?? []
+        };
     });
 
     const landmarks: PlacedLandmark[] = [];
@@ -907,7 +955,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
         : { x: width / 2, y: height / 2 };
 
-    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, roadStubs };
+    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, roadStubs, extraRoads };
 }
 
 //  The builders' yard: a fenced gravel plot the fleet parks in. The player

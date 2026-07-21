@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { PlacedRoadStub, TILE } from '../mapBuilder';
+import { Edge, PlacedRoadStub, TILE } from '../mapBuilder';
 import { loadCoins, saveCoins, saveExtraRoad, saveExtraStub } from '../storage';
 import { Driving } from './Driving';
 
@@ -15,6 +15,18 @@ const ROAD_REWARD = 5;
 //  Taps needed to pave the tile, mirrors Cooking.ts's stir-counter idiom
 const PAVES_NEEDED = 3;
 
+//  Relative to the direction of travel into the target tile (the stub's
+//  own edge), which absolute compass side is "left" and "right" — turning
+//  right from facing north means facing east, and so on round the compass
+const LEFT_OF: Record<Edge, Edge> = { north: 'west', east: 'north', south: 'east', west: 'south' };
+const RIGHT_OF: Record<Edge, Edge> = { north: 'east', east: 'south', south: 'west', west: 'north' };
+
+interface Piece
+{
+    label: string;
+    sides: Edge[];
+}
+
 export class RoadBuilder extends Scene
 {
     mapId = '';
@@ -23,9 +35,10 @@ export class RoadBuilder extends Scene
     targetRow = 0;
 
     instruction: Phaser.GameObjects.Text;
-    paletteContainer: Phaser.GameObjects.Container | null = null;
+    paletteZones: Phaser.GameObjects.Container[] = [];
     newTile: Phaser.GameObjects.Rectangle;
     pavesLeft = PAVES_NEEDED;
+    chosenSides: Edge[] = [];
     finished = false;
 
     constructor ()
@@ -43,8 +56,9 @@ export class RoadBuilder extends Scene
         this.targetRow = Math.round(this.stub.y / TILE - 0.5);
 
         this.pavesLeft = PAVES_NEEDED;
+        this.chosenSides = [];
         this.finished = false;
-        this.paletteContainer = null;
+        this.paletteZones = [];
     }
 
     create ()
@@ -74,31 +88,86 @@ export class RoadBuilder extends Scene
         this.showPalette();
     }
 
-    showPalette ()
+    //  Every piece the palette could ever offer, filtered down to only the
+    //  ones every one of their sides is currently buildable on this stub
+    buildPieces (): Piece[]
     {
-        const bg = this.add.graphics();
-        bg.fillStyle(0x616161, 1);
-        bg.fillRoundedRect(-110, -60, 220, 120, 16);
-        bg.lineStyle(5, 0x212121, 1);
-        bg.strokeRoundedRect(-110, -60, 220, 120, 16);
+        const straight = this.stub.edge;
+        const left = LEFT_OF[this.stub.edge];
+        const right = RIGHT_OF[this.stub.edge];
+        const valid = new Set(this.stub.validSides);
 
-        const road = this.add.rectangle(0, 0, 180, 30, 0x424242);
-        const dash = this.add.rectangle(0, 0, 40, 8, 0xffffff, 0.8);
-        const label = this.add.text(0, 90, 'STRAIGHT', {
-            fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff'
-        }).setOrigin(0.5);
+        const candidates: Piece[] = [
+            { label: 'STRAIGHT', sides: [ straight ] },
+            { label: 'LEFT', sides: [ left ] },
+            { label: 'RIGHT', sides: [ right ] },
+            { label: 'T (LEFT)', sides: [ straight, left ] },
+            { label: 'T (RIGHT)', sides: [ straight, right ] },
+            { label: 'CROSSROAD', sides: [ straight, left, right ] }
+        ];
 
-        this.paletteContainer = this.add.container(CX, 760, [ bg, road, dash, label ]);
-
-        const zone = this.add.zone(0, 0, 240, 140).setInteractive();
-        zone.on('pointerdown', () => this.pickStraight());
-        this.paletteContainer.add(zone);
+        return candidates.filter(piece => piece.sides.every(side => valid.has(side)));
     }
 
-    pickStraight ()
+    showPalette ()
     {
-        this.paletteContainer?.destroy();
-        this.paletteContainer = null;
+        const pieces = this.buildPieces();
+        const slotWidth = 190;
+        const startX = CX - ((pieces.length - 1) * slotWidth) / 2;
+
+        pieces.forEach((piece, i) => {
+
+            const x = startX + i * slotWidth;
+
+            const bg = this.add.graphics();
+            bg.fillStyle(0x616161, 1);
+            bg.fillRoundedRect(-80, -55, 160, 110, 16);
+            bg.lineStyle(5, 0x212121, 1);
+            bg.strokeRoundedRect(-80, -55, 160, 110, 16);
+
+            const icon = this.drawPieceIcon(piece.sides);
+            const label = this.add.text(0, 78, piece.label, {
+                fontFamily: 'Arial Black', fontSize: 22, color: '#ffffff'
+            }).setOrigin(0.5);
+
+            const container = this.add.container(x, 760, [ bg, icon, label ]);
+
+            const zone = this.add.zone(0, 0, 190, 150).setInteractive();
+            zone.on('pointerdown', () => this.pickPiece(piece.sides));
+            container.add(zone);
+
+            this.paletteZones.push(container);
+
+        });
+    }
+
+    //  A tiny top-down road icon: a stub of road drawn toward each side the
+    //  piece opens, meeting in the middle
+    drawPieceIcon (sides: Edge[]): Phaser.GameObjects.Container
+    {
+        const parts: Phaser.GameObjects.GameObject[] = [ this.add.rectangle(0, 0, 28, 28, 0x424242) ];
+
+        for (const side of sides)
+        {
+            if (side === 'north') parts.push(this.add.rectangle(0, -22, 24, 30, 0x424242));
+            else if (side === 'south') parts.push(this.add.rectangle(0, 22, 24, 30, 0x424242));
+            else if (side === 'east') parts.push(this.add.rectangle(22, 0, 30, 24, 0x424242));
+            else parts.push(this.add.rectangle(-22, 0, 30, 24, 0x424242));
+        }
+
+        return this.add.container(0, -10, parts);
+    }
+
+    pickPiece (sides: Edge[])
+    {
+        this.chosenSides = sides;
+
+        for (const zone of this.paletteZones)
+        {
+            zone.destroy();
+        }
+
+        this.paletteZones = [];
 
         this.instruction.setText(`Pave it! (${this.pavesLeft} left)`);
         this.newTile.setInteractive();
@@ -144,15 +213,17 @@ export class RoadBuilder extends Scene
 
         saveExtraRoad(this.mapId, { col: this.targetCol, row: this.targetRow });
 
-        //  The new tile is now road, so it can keep growing the same way
-        //  the piece it was built from did — one continuation stub, same
-        //  edge, sat on the tile that was just paved
-        saveExtraStub(this.mapId, {
-            id: `${this.mapId}-stub-${this.targetCol}x${this.targetRow}-${this.stub.edge}`,
-            col: this.targetCol,
-            row: this.targetRow,
-            edge: this.stub.edge
-        });
+        //  The new tile is now road, so it can keep growing — one
+        //  continuation stub per side the chosen piece opened up
+        for (const side of this.chosenSides)
+        {
+            saveExtraStub(this.mapId, {
+                id: `${this.mapId}-stub-${this.targetCol}x${this.targetRow}-${side}`,
+                col: this.targetCol,
+                row: this.targetRow,
+                edge: side
+            });
+        }
 
         //  Pay the road builder
         const coins = ((this.registry.get('coins') as number) ?? loadCoins()) + ROAD_REWARD;

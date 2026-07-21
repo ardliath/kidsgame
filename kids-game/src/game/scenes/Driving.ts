@@ -106,6 +106,7 @@ export class Driving extends Scene
     sites: PlacedSite[] = [];
     landmarks: PlacedLandmark[] = [];
     roadStubs: PlacedRoadStub[] = [];
+    extraRoads: Set<string> = new Set();
     npcCars: NpcCarState[] = [];
     npcGroup: Phaser.Physics.Arcade.Group;
 
@@ -249,6 +250,7 @@ export class Driving extends Scene
         this.sites = built.sites;
         this.landmarks = built.landmarks;
         this.roadStubs = built.roadStubs;
+        this.extraRoads = built.extraRoads;
         this.bubbleTarget = null;
 
         this.physics.world.setBounds(0, 0, built.width, built.height);
@@ -1015,8 +1017,12 @@ export class Driving extends Scene
 
     isRoadTile (col: number, row: number): boolean
     {
-        return row >= 0 && row < this.map.tiles.length && col >= 0 && col < this.map.tiles[0].length
-            && this.map.tiles[row][col] === 'R';
+        if (row < 0 || row >= this.map.tiles.length || col < 0 || col >= this.map.tiles[0].length)
+        {
+            return false;
+        }
+
+        return this.map.tiles[row][col] === 'R' || this.extraRoads.has(`${col},${row}`);
     }
 
     //  Chooses where an NPC drives to next, from the tile it's just reached.
