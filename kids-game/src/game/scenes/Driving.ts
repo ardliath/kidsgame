@@ -3,7 +3,7 @@ import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { DeliveriesConfig, DeliveryJob, generateJob } from '../deliveries';
-import { buildMap, DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
+import { buildMap, DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedRoadStub, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch } from '../sfx';
 import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDirt, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDirt, saveFleet, saveFuel, saveNavTarget, savePantry, SaveData } from '../storage';
@@ -104,6 +104,7 @@ export class Driving extends Scene
     houses: PlacedHouse[] = [];
     sites: PlacedSite[] = [];
     landmarks: PlacedLandmark[] = [];
+    roadStubs: PlacedRoadStub[] = [];
     npcCars: NpcCarState[] = [];
     npcGroup: Phaser.Physics.Arcade.Group;
 
@@ -246,6 +247,7 @@ export class Driving extends Scene
         this.houses = built.houses;
         this.sites = built.sites;
         this.landmarks = built.landmarks;
+        this.roadStubs = built.roadStubs;
         this.bubbleTarget = null;
 
         this.physics.world.setBounds(0, 0, built.width, built.height);

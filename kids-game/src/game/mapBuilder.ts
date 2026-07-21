@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
-import { loadBuiltHouses, loadDemolished, loadExtraSites, loadPlayerName, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraSite, saveExtraSites } from './storage';
+import { loadBuiltHouses, loadDemolished, loadExtraRoads, loadExtraSites, loadExtraStubs, loadPlayerName, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites } from './storage';
 
 export const TILE = 200;
 
@@ -66,6 +66,19 @@ export interface CarPlacement
     facing?: Edge;
 }
 
+//  A place a new road piece can be attached — sits on an existing road tile,
+//  pointing (via `edge`) at the adjacent grass/boundary it can grow into.
+//  `unlocksMap` is only set on the small set of edge-of-map stubs that reveal
+//  a whole new town once built (see Stage 5 of the roads/bridges/tunnels plan).
+export interface RoadStub
+{
+    id: string;
+    col: number;
+    row: number;
+    edge: Edge;
+    unlocksMap?: string;
+}
+
 export interface MapData
 {
     id: string;
@@ -76,6 +89,7 @@ export interface MapData
     cars?: CarPlacement[];
     exits?: Partial<Record<Edge, string>>;
     start?: { col: number; row: number };
+    roadStubs?: RoadStub[];
 }
 
 export interface PlacedHouse
@@ -99,6 +113,19 @@ export interface PlacedSite
     y: number;
     width: number;
     height: number;
+}
+
+//  A road stub still open for a new piece — x/y is the grass/target tile
+//  it would pave, not the existing road tile it grows from
+export interface PlacedRoadStub
+{
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    edge: Edge;
+    unlocksMap?: string;
 }
 
 //  The builders' yard: where the fleet parks. `spawn*` is the road tile the
@@ -150,6 +177,7 @@ export interface BuiltMap
     npcCars: PlacedNpcCar[];
     yard: PlacedYard | null;
     landmarks: PlacedLandmark[];
+    roadStubs: PlacedRoadStub[];
 }
 
 const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
@@ -229,8 +257,12 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     const width = cols * TILE;
     const height = rows * TILE;
 
+    //  Tiles the player has paved since — populated below, before tileAt is
+    //  ever actually called, but declared here so the closure can see it
+    const extraRoads = new Set<string>();
+
     const tileAt = (c: number, r: number): string | null =>
-        (c < 0 || r < 0 || c >= cols || r >= rows) ? null : map.tiles[r][c];
+        (c < 0 || r < 0 || c >= cols || r >= rows) ? null : (extraRoads.has(`${c},${r}`) ? 'R' : map.tiles[r][c]);
 
     //  Off the map counts as road, so roads at exits keep their markings
     const isRoad = (c: number, r: number): boolean => {
@@ -352,6 +384,27 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
+    //  Tiles the player has paved onto this map's road network — same
+    //  purge-then-reapply pattern as extra sites, populating `extraRoads`
+    //  so tileAt/isRoad (and everything drawn from them) see it as real road
+    const allExtraRoads = loadExtraRoads();
+    const mapExtraRoads = allExtraRoads[map.id] ?? [];
+    const keptExtraRoads = mapExtraRoads.filter(t => !objectTiles.has(`${t.col},${t.row}`));
+
+    if (keptExtraRoads.length !== mapExtraRoads.length)
+    {
+        allExtraRoads[map.id] = keptExtraRoads;
+        saveExtraRoads(allExtraRoads);
+    }
+
+    for (const tile of keptExtraRoads)
+    {
+        if (map.tiles[tile.row]?.[tile.col] === '.')
+        {
+            extraRoads.add(`${tile.col},${tile.row}`);
+        }
+    }
+
     //  Demolished houses stand as building sites now (a rebuilt one is drawn
     //  as a house again by the site loop below, because it's in builtHouses)
     for (let i = houseSpecs.length - 1; i >= 0; i--)
@@ -390,6 +443,36 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     {
         const y = yardObj as MapObject;
         markFootprint(y.col, y.row, y.w ?? 3, y.h ?? 2);
+    }
+
+    //  Road stubs' target tiles must be kept clear of the auto-site system
+    //  too, or a future top-up could pave right over a place a road piece
+    //  is waiting to be built
+    const EDGE_DELTA: Record<Edge, [number, number]> = {
+        north: [ 0, -1 ], south: [ 0, 1 ], east: [ 1, 0 ], west: [ -1, 0 ]
+    };
+
+    const candidateStubs: RoadStub[] = [ ...(map.roadStubs ?? []), ...(loadExtraStubs()[map.id] ?? []) ];
+    const activeStubs: { stub: RoadStub; targetCol: number; targetRow: number }[] = [];
+
+    for (const stub of candidateStubs)
+    {
+        const [ dx, dy ] = EDGE_DELTA[stub.edge];
+        const targetCol = stub.col + dx;
+        const targetRow = stub.row + dy;
+
+        if (targetRow < 0 || targetRow >= rows || targetCol < 0 || targetCol >= cols)
+        {
+            continue; //  An edge/unlock stub's off-map target is handled from Stage 5 onward
+        }
+
+        if (tileAt(targetCol, targetRow) === 'R')
+        {
+            continue; //  Already built — this stub has done its job
+        }
+
+        activeStubs.push({ stub, targetCol, targetRow });
+        markFootprint(targetCol, targetRow, 1, 1);
     }
 
     const pickEmptyGrass = (): { col: number; row: number } | null => {
@@ -534,7 +617,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     {
         for (let c = 0; c < cols; c++)
         {
-            const t = map.tiles[r][c];
+            const t = extraRoads.has(`${c},${r}`) ? 'R' : map.tiles[r][c];
             const cx = c * TILE + TILE / 2;
             const cy = r * TILE + TILE / 2;
 
@@ -741,6 +824,33 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
+    //  ---- Road stubs: draw a marker at each place a new road piece can
+    //  still be attached (activeStubs was already computed and reserved
+    //  earlier, alongside the auto-site system's own footprint marking) ----
+
+    const EDGE_ROTATION: Record<Edge, number> = {
+        north: 0, south: Math.PI, east: Math.PI / 2, west: -Math.PI / 2
+    };
+
+    const placeRoadStubMarker = (x: number, y: number, edge: Edge) => {
+
+        scene.add.rectangle(x, y, TILE - 20, TILE - 20, 0x9e9e9e, 0.35).setStrokeStyle(4, 0x616161);
+
+        //  Triangle points must be non-negative or Phaser miscentres it
+        const arrow = scene.add.triangle(0, -10, 0, 20, 24, 20, 12, 0, 0x616161);
+        scene.add.container(x, y, [ arrow ]).setRotation(EDGE_ROTATION[edge]);
+    };
+
+    const roadStubs: PlacedRoadStub[] = activeStubs.map(({ stub, targetCol, targetRow }) => {
+
+        const tx = (targetCol + 0.5) * TILE;
+        const ty = (targetRow + 0.5) * TILE;
+
+        placeRoadStubMarker(tx, ty, stub.edge);
+
+        return { id: stub.id, x: tx, y: ty, width: TILE - 20, height: TILE - 20, edge: stub.edge, unlocksMap: stub.unlocksMap };
+    });
+
     const landmarks: PlacedLandmark[] = [];
 
     for (const spec of landmarkSpecs)
@@ -790,14 +900,14 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     const yard = yardObj ? drawYard(scene, yardObj, tileAt) : null;
 
-    buildEdgeWalls(scene, map, obstacles, cols, rows);
-    drawSignposts(scene, map, cols, rows);
+    buildEdgeWalls(scene, map, obstacles, cols, rows, extraRoads);
+    drawSignposts(scene, map, cols, rows, extraRoads);
 
     const start = map.start
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
         : { x: width / 2, y: height / 2 };
 
-    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks };
+    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, roadStubs };
 }
 
 //  The builders' yard: a fenced gravel plot the fleet parks in. The player
@@ -876,8 +986,10 @@ function range (start: number, count: number): number[]
 
 //  Invisible walls along each map edge, with openings only where a road
 //  meets an edge that connects to another map
-function buildEdgeWalls (scene: Scene, map: MapData, obstacles: Phaser.Physics.Arcade.StaticGroup, cols: number, rows: number)
+function buildEdgeWalls (scene: Scene, map: MapData, obstacles: Phaser.Physics.Arcade.StaticGroup, cols: number, rows: number, extraRoads: Set<string>)
 {
+    const isRoadTile = (c: number, r: number) => extraRoads.has(`${c},${r}`) || map.tiles[r][c] === 'R';
+
     const width = cols * TILE;
     const height = rows * TILE;
 
@@ -908,22 +1020,24 @@ function buildEdgeWalls (scene: Scene, map: MapData, obstacles: Phaser.Physics.A
         }
     };
 
-    buildEdge(cols, c => map.tiles[0][c] === 'R' && !!map.exits?.north, (center, length) => addWall(center, 0, length, 60));
-    buildEdge(cols, c => map.tiles[rows - 1][c] === 'R' && !!map.exits?.south, (center, length) => addWall(center, height, length, 60));
-    buildEdge(rows, r => map.tiles[r][0] === 'R' && !!map.exits?.west, (center, length) => addWall(0, center, 60, length));
-    buildEdge(rows, r => map.tiles[r][cols - 1] === 'R' && !!map.exits?.east, (center, length) => addWall(width, center, 60, length));
+    buildEdge(cols, c => isRoadTile(c, 0) && !!map.exits?.north, (center, length) => addWall(center, 0, length, 60));
+    buildEdge(cols, c => isRoadTile(c, rows - 1) && !!map.exits?.south, (center, length) => addWall(center, height, length, 60));
+    buildEdge(rows, r => isRoadTile(0, r) && !!map.exits?.west, (center, length) => addWall(0, center, 60, length));
+    buildEdge(rows, r => isRoadTile(cols - 1, r) && !!map.exits?.east, (center, length) => addWall(width, center, 60, length));
 }
 
 //  A small sign naming the town on the other side of each exit, derived
 //  entirely from map.exits and the road gap in the edge wall — no JSON
 //  authoring needed. Purely decorative, never added to obstacles, so it
 //  can never block the exit it's labelling.
-function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number)
+function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number, extraRoads: Set<string>)
 {
     if (!map.exits)
     {
         return;
     }
+
+    const isRoadTile = (c: number, r: number) => extraRoads.has(`${c},${r}`) || map.tiles[r][c] === 'R';
 
     const placeSignpost = (x: number, y: number, targetId: string) => {
 
@@ -941,11 +1055,11 @@ function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number)
     };
 
     //  The single tile index along an edge where a road actually crosses it
-    const findGapIndex = (length: number, tileAt: (i: number) => string): number | null => {
+    const findGapIndex = (length: number, isRoad: (i: number) => boolean): number | null => {
 
         for (let i = 0; i < length; i++)
         {
-            if (tileAt(i) === 'R')
+            if (isRoad(i))
             {
                 return i;
             }
@@ -956,7 +1070,7 @@ function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number)
 
     if (map.exits.north)
     {
-        const gap = findGapIndex(cols, c => map.tiles[0][c]);
+        const gap = findGapIndex(cols, c => isRoadTile(c, 0));
 
         if (gap !== null)
         {
@@ -966,7 +1080,7 @@ function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number)
 
     if (map.exits.south)
     {
-        const gap = findGapIndex(cols, c => map.tiles[rows - 1][c]);
+        const gap = findGapIndex(cols, c => isRoadTile(c, rows - 1));
 
         if (gap !== null)
         {
@@ -976,7 +1090,7 @@ function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number)
 
     if (map.exits.west)
     {
-        const gap = findGapIndex(rows, r => map.tiles[r][0]);
+        const gap = findGapIndex(rows, r => isRoadTile(0, r));
 
         if (gap !== null)
         {
@@ -986,7 +1100,7 @@ function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number)
 
     if (map.exits.east)
     {
-        const gap = findGapIndex(rows, r => map.tiles[r][cols - 1]);
+        const gap = findGapIndex(rows, r => isRoadTile(cols - 1, r));
 
         if (gap !== null)
         {

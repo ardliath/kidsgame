@@ -1,5 +1,6 @@
 import { CAR_MODELS, DEFAULT_MODEL } from './carShapes';
 import { DeliveryJob } from './deliveries';
+import type { Edge } from './mapBuilder';
 
 const SAVE_KEY = 'kids-game-save';
 const CAR_KEY = 'kids-game-car';
@@ -19,6 +20,8 @@ const NAV_TARGET_KEY = 'kids-game-nav-target';
 const DELIVERY_KEY = 'kids-game-delivery';
 const FUEL_KEY = 'kids-game-fuel';
 const WASH_KEY = 'kids-game-dirt';
+const EXTRA_ROADS_KEY = 'kids-game-extra-roads';
+const EXTRA_STUBS_KEY = 'kids-game-extra-stubs';
 
 export interface SaveData
 {
@@ -578,6 +581,116 @@ export function saveDirt (model: string, level: number)
     catch
     {
         //  Ignore: worst case it looks cleaner than it should next session
+    }
+}
+
+//  Extra tiles the player has paved onto a town's road network, keyed by
+//  map id — same overlay shape as extra sites (loaded fresh by buildMap()
+//  every time rather than ever mutating the static map JSON)
+export interface ExtraRoadTile
+{
+    col: number;
+    row: number;
+    crossing?: 'ns-over' | 'ew-over';
+}
+
+export function loadExtraRoads (): Record<string, ExtraRoadTile[]>
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(EXTRA_ROADS_KEY) ?? '{}') as Record<string, ExtraRoadTile[]>;
+    }
+    catch
+    {
+        return {};
+    }
+}
+
+export function saveExtraRoad (mapId: string, tile: ExtraRoadTile)
+{
+    try
+    {
+        const all = loadExtraRoads();
+        const list = all[mapId] ?? [];
+
+        if (!list.some(t => t.col === tile.col && t.row === tile.row))
+        {
+            list.push(tile);
+            all[mapId] = list;
+            localStorage.setItem(EXTRA_ROADS_KEY, JSON.stringify(all));
+        }
+    }
+    catch
+    {
+        //  Ignore: worst case the tile has to be rebuilt next time
+    }
+}
+
+export function saveExtraRoads (all: Record<string, ExtraRoadTile[]>)
+{
+    try
+    {
+        localStorage.setItem(EXTRA_ROADS_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
+//  Places a new road piece can be attached, keyed by map id. Hand-placed
+//  stubs live in the map JSON itself (MapData.roadStubs); these are the
+//  ones a previous build created as it opened up new growth directions.
+export interface PersistedRoadStub
+{
+    id: string;
+    col: number;
+    row: number;
+    edge: Edge;
+    unlocksMap?: string;
+}
+
+export function loadExtraStubs (): Record<string, PersistedRoadStub[]>
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(EXTRA_STUBS_KEY) ?? '{}') as Record<string, PersistedRoadStub[]>;
+    }
+    catch
+    {
+        return {};
+    }
+}
+
+export function saveExtraStub (mapId: string, stub: PersistedRoadStub)
+{
+    try
+    {
+        const all = loadExtraStubs();
+        const list = all[mapId] ?? [];
+
+        if (!list.some(s => s.id === stub.id))
+        {
+            list.push(stub);
+            all[mapId] = list;
+            localStorage.setItem(EXTRA_STUBS_KEY, JSON.stringify(all));
+        }
+    }
+    catch
+    {
+        //  Ignore: the stub just won't be offered again until rebuilt
+    }
+}
+
+export function saveExtraStubs (all: Record<string, PersistedRoadStub[]>)
+{
+    try
+    {
+        localStorage.setItem(EXTRA_STUBS_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  Ignore
     }
 }
 

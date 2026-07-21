@@ -69,5 +69,8 @@
         "east": "hill-town",
         "south": "beach-town"
     },
+    "roadStubs": [
+        { "id": "home-stub-1", "col": 2, "row": 5, "edge": "west" }
+    ],
     "start": { "col": 6, "row": 10 }
 }
