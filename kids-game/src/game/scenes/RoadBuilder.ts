@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 import { Edge, PlacedRoadStub, TILE } from '../mapBuilder';
-import { loadCoins, saveCoins, saveExtraRoad, saveExtraStub } from '../storage';
+import { ExtraRoadTile, loadCoins, saveCoins, saveExtraRoad, saveExtraStub } from '../storage';
 import { Driving } from './Driving';
 
 const CX = GAME_WIDTH / 2;
@@ -39,6 +39,8 @@ export class RoadBuilder extends Scene
     newTile: Phaser.GameObjects.Rectangle;
     pavesLeft = PAVES_NEEDED;
     chosenSides: Edge[] = [];
+    crossing: ExtraRoadTile['crossing'] = undefined;
+    crossingChoice: 'bridge' | 'tunnel' | null = null;
     finished = false;
 
     constructor ()
@@ -57,6 +59,8 @@ export class RoadBuilder extends Scene
 
         this.pavesLeft = PAVES_NEEDED;
         this.chosenSides = [];
+        this.crossing = undefined;
+        this.crossingChoice = null;
         this.finished = false;
         this.paletteZones = [];
     }
@@ -65,7 +69,7 @@ export class RoadBuilder extends Scene
     {
         this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x7cb342);
 
-        this.instruction = this.add.text(CX, 90, 'Pick a piece to build!', {
+        this.instruction = this.add.text(CX, 90, this.stub.isCrossing ? 'A road crosses here!' : 'Pick a piece to build!', {
             fontFamily: 'Arial Black', fontSize: 44, color: '#ffffff',
             stroke: '#00000', strokeThickness: 8
         }).setOrigin(0.5);
@@ -79,13 +83,25 @@ export class RoadBuilder extends Scene
 
         //  A canonical two-tile preview — the existing road on the left
         //  connecting to the new grass tile on the right — rather than a
-        //  literal replay of the map's own orientation
+        //  literal replay of the map's own orientation. Already-road tiles
+        //  (a crossing) preview grey from the start, since there's nothing
+        //  new to pave there.
         this.add.rectangle(CX - PREVIEW_TILE / 2 - 20, TILE_Y, PREVIEW_TILE, PREVIEW_TILE, 0x9e9e9e).setStrokeStyle(4, 0x616161);
         this.add.rectangle(CX - PREVIEW_TILE / 2 - 20, TILE_Y, PREVIEW_TILE - 40, 24, 0xffffff, 0.6);
 
-        this.newTile = this.add.rectangle(CX + PREVIEW_TILE / 2 + 20, TILE_Y, PREVIEW_TILE, PREVIEW_TILE, 0x7cb342).setStrokeStyle(4, 0x33691e);
+        const newTileColour = this.stub.isCrossing ? 0x9e9e9e : 0x7cb342;
+        const newTileStroke = this.stub.isCrossing ? 0x616161 : 0x33691e;
 
-        this.showPalette();
+        this.newTile = this.add.rectangle(CX + PREVIEW_TILE / 2 + 20, TILE_Y, PREVIEW_TILE, PREVIEW_TILE, newTileColour).setStrokeStyle(4, newTileStroke);
+
+        if (this.stub.isCrossing)
+        {
+            this.showCrossingChoice();
+        }
+        else
+        {
+            this.showPalette();
+        }
     }
 
     //  Every piece the palette could ever offer, filtered down to only the
@@ -174,6 +190,58 @@ export class RoadBuilder extends Scene
         this.newTile.on('pointerdown', () => this.paveTap());
     }
 
+    //  A perpendicular road already runs through the target tile — offer to
+    //  go over it (bridge) or under it (tunnel) instead of the usual palette
+    showCrossingChoice ()
+    {
+        this.paletteZones.push(this.makeChoiceButton(CX - 110, 760, 'BRIDGE', 0x8d6e63, () => this.pickCrossing('bridge')));
+        this.paletteZones.push(this.makeChoiceButton(CX + 110, 760, 'TUNNEL', 0x455a64, () => this.pickCrossing('tunnel')));
+    }
+
+    makeChoiceButton (x: number, y: number, label: string, colour: number, onTap: () => void): Phaser.GameObjects.Container
+    {
+        const dark = Phaser.Display.Color.IntegerToColor(colour).darken(35).color;
+
+        const bg = this.add.graphics();
+        bg.fillStyle(colour, 1);
+        bg.fillRoundedRect(-90, -45, 180, 90, 16);
+        bg.lineStyle(5, dark, 1);
+        bg.strokeRoundedRect(-90, -45, 180, 90, 16);
+
+        const text = this.add.text(0, 0, label, {
+            fontFamily: 'Arial Black', fontSize: 26, color: '#ffffff'
+        }).setOrigin(0.5);
+
+        const container = this.add.container(x, y, [ bg, text ]);
+
+        const zone = this.add.zone(0, 0, 190, 100).setInteractive();
+        zone.on('pointerdown', onTap);
+        container.add(zone);
+
+        return container;
+    }
+
+    //  The new road picks which axis rides over the other; the "beyond"
+    //  continuation only exists if the straight-ahead side is still open
+    pickCrossing (choice: 'bridge' | 'tunnel')
+    {
+        const newAxis: 'ns' | 'ew' = (this.stub.edge === 'north' || this.stub.edge === 'south') ? 'ns' : 'ew';
+        const otherAxis: 'ns' | 'ew' = newAxis === 'ns' ? 'ew' : 'ns';
+
+        this.crossing = choice === 'bridge' ? `${newAxis}-over` : `${otherAxis}-over`;
+        this.crossingChoice = choice;
+        this.chosenSides = this.stub.validSides.includes(this.stub.edge) ? [ this.stub.edge ] : [];
+
+        for (const zone of this.paletteZones)
+        {
+            zone.destroy();
+        }
+
+        this.paletteZones = [];
+
+        this.finish();
+    }
+
     paveTap ()
     {
         if (this.pavesLeft <= 0)
@@ -211,7 +279,7 @@ export class RoadBuilder extends Scene
 
         this.finished = true;
 
-        saveExtraRoad(this.mapId, { col: this.targetCol, row: this.targetRow });
+        saveExtraRoad(this.mapId, { col: this.targetCol, row: this.targetRow, crossing: this.crossing });
 
         //  The new tile is now road, so it can keep growing — one
         //  continuation stub per side the chosen piece opened up
@@ -230,7 +298,8 @@ export class RoadBuilder extends Scene
         this.registry.set('coins', coins);
         saveCoins(coins);
 
-        this.instruction.setText(`You built a road! +${ROAD_REWARD} coins!`);
+        const built = this.crossingChoice ?? 'road';
+        this.instruction.setText(`You built a ${built}! +${ROAD_REWARD} coins!`);
         this.tweens.add({ targets: this.instruction, scale: 1.25, duration: 300, yoyo: true, repeat: 2 });
 
         //  Coin shower

@@ -143,6 +143,10 @@ export interface PlacedRoadStub
     //  in bounds, plain grass, not already reserved by a house/site/yard/
     //  another stub. Lets RoadBuilder offer only pieces the terrain allows.
     validSides: Edge[];
+
+    //  The target tile is already a live perpendicular road — RoadBuilder
+    //  offers a bridge/tunnel choice instead of the normal piece palette
+    isCrossing: boolean;
 }
 
 //  The builders' yard: where the fleet parks. `spawn*` is the road tile the
@@ -419,8 +423,19 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         saveExtraRoads(allExtraRoads);
     }
 
+    //  Tiles where two roads cross — resolved once (bridge or tunnel) and
+    //  then just a drawing detail forever after, same overlay entry either
+    //  way whether the tile itself is a player-paved one or an original
+    //  part of the map
+    const crossingByTile = new Map<string, 'ns-over' | 'ew-over'>();
+
     for (const tile of keptExtraRoads)
     {
+        if (tile.crossing)
+        {
+            crossingByTile.set(`${tile.col},${tile.row}`, tile.crossing);
+        }
+
         if (map.tiles[tile.row]?.[tile.col] === '.')
         {
             extraRoads.add(`${tile.col},${tile.row}`);
@@ -471,7 +486,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  too, or a future top-up could pave right over a place a road piece
     //  is waiting to be built
     const candidateStubs: RoadStub[] = [ ...(map.roadStubs ?? []), ...(loadExtraStubs()[map.id] ?? []) ];
-    const activeStubs: { stub: RoadStub; targetCol: number; targetRow: number }[] = [];
+    const activeStubs: { stub: RoadStub; targetCol: number; targetRow: number; isCrossing: boolean }[] = [];
 
     for (const stub of candidateStubs)
     {
@@ -484,12 +499,32 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
             continue; //  An edge/unlock stub's off-map target is handled from Stage 5 onward
         }
 
-        if (tileAt(targetCol, targetRow) === 'R')
+        const alreadyRoad = tileAt(targetCol, targetRow) === 'R';
+
+        if (alreadyRoad)
         {
-            continue; //  Already built — this stub has done its job
+            //  Only a genuine crossing if a PERPENDICULAR road already runs
+            //  through the target — a target paved by this stub's own
+            //  straight/corner build (however many pieces ago) never has
+            //  road to either side of that axis, so it's simply done, not
+            //  a bridge/tunnel opportunity
+            const perpendicular: Edge[] = (stub.edge === 'north' || stub.edge === 'south') ? [ 'east', 'west' ] : [ 'north', 'south' ];
+
+            const isCrossing = perpendicular.some(side => {
+                const [ pdx, pdy ] = EDGE_DELTA[side];
+                return tileAt(targetCol + pdx, targetRow + pdy) === 'R';
+            });
+
+            if (!isCrossing || crossingByTile.has(`${targetCol},${targetRow}`))
+            {
+                continue; //  Already built, and either not a crossing or already resolved
+            }
+
+            activeStubs.push({ stub, targetCol, targetRow, isCrossing: true });
+            continue;
         }
 
-        activeStubs.push({ stub, targetCol, targetRow });
+        activeStubs.push({ stub, targetCol, targetRow, isCrossing: false });
         markFootprint(targetCol, targetRow, 1, 1);
     }
 
@@ -709,6 +744,32 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
                 {
                     scene.add.rectangle(cx, cy, 60, 8, 0xffffff);
                 }
+
+                //  Two roads crossing — visual only, never a solid() call,
+                //  so both directions stay fully drivable exactly as if
+                //  they'd never actually met
+                const crossing = crossingByTile.get(`${c},${r}`);
+
+                if (crossing === 'ns-over')
+                {
+                    //  East-west traffic disappears under the deck
+                    scene.add.rectangle(c * TILE + 6, cy, 46, 60, 0x263238);
+                    scene.add.rectangle((c + 1) * TILE - 6, cy, 46, 60, 0x263238);
+
+                    //  The north-south deck, raised over the top
+                    scene.add.rectangle(cx + 8, cy + 8, 74, TILE, 0x000000, 0.18);
+                    scene.add.rectangle(cx, cy, 74, TILE, 0xa1887f).setStrokeStyle(4, 0x6d4c41);
+                }
+                else if (crossing === 'ew-over')
+                {
+                    //  North-south traffic disappears under the deck
+                    scene.add.rectangle(cx, r * TILE + 6, 60, 46, 0x263238);
+                    scene.add.rectangle(cx, (r + 1) * TILE - 6, 60, 46, 0x263238);
+
+                    //  The east-west deck, raised over the top
+                    scene.add.rectangle(cx + 8, cy + 8, TILE, 74, 0x000000, 0.18);
+                    scene.add.rectangle(cx, cy, TILE, 74, 0xa1887f).setStrokeStyle(4, 0x6d4c41);
+                }
             }
             else if (t === 'T')
             {
@@ -886,7 +947,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         scene.add.container(x, y, [ arrow ]).setRotation(EDGE_ROTATION[edge]);
     };
 
-    const roadStubs: PlacedRoadStub[] = activeStubs.map(({ stub, targetCol, targetRow }) => {
+    const roadStubs: PlacedRoadStub[] = activeStubs.map(({ stub, targetCol, targetRow, isCrossing }) => {
 
         const tx = (targetCol + 0.5) * TILE;
         const ty = (targetRow + 0.5) * TILE;
@@ -895,7 +956,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
         return {
             id: stub.id, x: tx, y: ty, width: TILE - 20, height: TILE - 20, edge: stub.edge, unlocksMap: stub.unlocksMap,
-            validSides: stubValidSides.get(stub.id) ?? []
+            validSides: stubValidSides.get(stub.id) ?? [], isCrossing
         };
     });
 

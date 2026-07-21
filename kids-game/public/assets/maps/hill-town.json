@@ -8,9 +8,9 @@
         "...R....R...",
         ".T.R.TT.R.BB",
         "...R.TT.R.BB",
-        "RRRR....R...",
-        ".H.R....R.T.",
-        "...RRRRRR...",
+        "RRRR....RR..",
+        ".H.R....RRT.",
+        "...RRRRRRR..",
         "...R...T....",
         "...R..HH.T..",
         "...R........"
@@ -58,5 +58,8 @@
         "west": "home-town",
         "south": "cove-town"
     },
+    "roadStubs": [
+        { "id": "hill-stub-1", "col": 8, "row": 6, "edge": "east" }
+    ],
     "start": { "col": 3, "row": 6 }
 }
