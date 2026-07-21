@@ -77,7 +77,8 @@ type ActionTarget =
     { kind: 'swap'; model: string; x: number; y: number; heading: number; height: number } |
     { kind: 'pickup'; x: number; y: number; height: number } |
     { kind: 'deliver'; x: number; y: number; height: number } |
-    { kind: 'refuel'; house: PlacedHouse };
+    { kind: 'refuel'; house: PlacedHouse } |
+    { kind: 'road'; stub: PlacedRoadStub };
 
 interface DrivingData
 {
@@ -637,6 +638,11 @@ export class Driving extends Scene
             consider(parked.x, parked.y, 68, 68, { kind: 'swap', model: parked.model, x: parked.x, y: parked.y, heading: parked.heading, height: 68 });
         }
 
+        for (const stub of this.roadStubs)
+        {
+            consider(stub.x, stub.y, stub.width, stub.height, { kind: 'road', stub });
+        }
+
         //  A pickup/deliver spot is often the exact same building as a shop
         //  or house (e.g. picking up from a café you could otherwise browse)
         //  — checked separately, and given first claim on `best` below, so it
@@ -702,6 +708,7 @@ export class Driving extends Scene
             const t = this.bubbleTarget;
             const at = t.kind === 'build' ? t.site
                 : (t.kind === 'swap' || t.kind === 'pickup' || t.kind === 'deliver') ? t
+                : t.kind === 'road' ? t.stub
                 : t.house;
 
             if (t.kind === 'build')
@@ -739,6 +746,12 @@ export class Driving extends Scene
                 this.bubbleBg.setFillStyle(0xfff9c4);
                 this.bubbleBg.setStrokeStyle(5, 0xf9a825);
                 this.bubbleLabel.setText('FUEL').setColor('#f57f17');
+            }
+            else if (t.kind === 'road')
+            {
+                this.bubbleBg.setFillStyle(0x9e9e9e);
+                this.bubbleBg.setStrokeStyle(5, 0x424242);
+                this.bubbleLabel.setText('ROAD').setColor('#212121');
             }
             else if (t.house.shopType === 'treat')
             {
@@ -816,6 +829,10 @@ export class Driving extends Scene
         else if (target.kind === 'visit')
         {
             this.scene.launch('Interior', { houseId: target.house.id, colour: target.house.colour });
+        }
+        else if (target.kind === 'road')
+        {
+            this.scene.launch('RoadBuilder', { mapId: this.registry.get('mapId') as string, stub: target.stub });
         }
         else if (target.house.shopType === 'treat')
         {

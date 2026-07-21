@@ -14,6 +14,7 @@ import { Interior } from './scenes/Interior';
 import { MiniMap } from './scenes/MiniMap';
 import { Options } from './scenes/Options';
 import { Preloader } from './scenes/Preloader';
+import { RoadBuilder } from './scenes/RoadBuilder';
 import { Shop } from './scenes/Shop';
 import { Yard } from './scenes/Yard';
 
@@ -48,7 +49,8 @@ const config: Phaser.Types.Core.GameConfig = {
         Yard,
         DeliveryBoard,
         CarWash,
-        Chippy
+        Chippy,
+        RoadBuilder
     ]
 };
 

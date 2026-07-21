@@ -18,6 +18,14 @@ export function mapCacheKey (id: string): string
 
 export type Edge = 'north' | 'south' | 'east' | 'west';
 
+export const EDGE_DELTA: Record<Edge, [number, number]> = {
+    north: [ 0, -1 ], south: [ 0, 1 ], east: [ 1, 0 ], west: [ -1, 0 ]
+};
+
+export const EDGE_ROTATION: Record<Edge, number> = {
+    north: 0, south: Math.PI, east: Math.PI / 2, west: -Math.PI / 2
+};
+
 //  Custom characters a map can define for its tile grid
 export interface LegendEntry
 {
@@ -448,10 +456,6 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  Road stubs' target tiles must be kept clear of the auto-site system
     //  too, or a future top-up could pave right over a place a road piece
     //  is waiting to be built
-    const EDGE_DELTA: Record<Edge, [number, number]> = {
-        north: [ 0, -1 ], south: [ 0, 1 ], east: [ 1, 0 ], west: [ -1, 0 ]
-    };
-
     const candidateStubs: RoadStub[] = [ ...(map.roadStubs ?? []), ...(loadExtraStubs()[map.id] ?? []) ];
     const activeStubs: { stub: RoadStub; targetCol: number; targetRow: number }[] = [];
 
@@ -827,10 +831,6 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  ---- Road stubs: draw a marker at each place a new road piece can
     //  still be attached (activeStubs was already computed and reserved
     //  earlier, alongside the auto-site system's own footprint marking) ----
-
-    const EDGE_ROTATION: Record<Edge, number> = {
-        north: 0, south: Math.PI, east: Math.PI / 2, west: -Math.PI / 2
-    };
 
     const placeRoadStubMarker = (x: number, y: number, edge: Edge) => {
 
