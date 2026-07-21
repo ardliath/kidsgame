@@ -1,5 +1,5 @@
 import { Scene } from 'phaser';
-import { MAP_IDS, mapCacheKey } from '../mapBuilder';
+import { EXTRA_TOWN_IDS, MAP_IDS, mapCacheKey } from '../mapBuilder';
 
 export class Preloader extends Scene
 {
@@ -35,7 +35,7 @@ export class Preloader extends Scene
 
         this.load.image('logo', 'logo.png');
 
-        for (const id of MAP_IDS)
+        for (const id of [ ...MAP_IDS, ...EXTRA_TOWN_IDS ])
         {
             this.load.json(mapCacheKey(id), `maps/${id}.json`);
         }

@@ -1,8 +1,8 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { Edge, PlacedRoadStub, TILE } from '../mapBuilder';
-import { ExtraRoadTile, loadCoins, saveCoins, saveExtraRoad, saveExtraStub } from '../storage';
+import { Edge, mapCacheKey, MapData, PlacedRoadStub, TILE } from '../mapBuilder';
+import { ExtraRoadTile, loadCoins, saveCoins, saveExtraExit, saveExtraRoad, saveExtraStub, saveUnlockedTown } from '../storage';
 import { Driving } from './Driving';
 
 const CX = GAME_WIDTH / 2;
@@ -69,7 +69,9 @@ export class RoadBuilder extends Scene
     {
         this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x7cb342);
 
-        this.instruction = this.add.text(CX, 90, this.stub.isCrossing ? 'A road crosses here!' : 'Pick a piece to build!', {
+        const title = this.stub.unlocksMap ? 'Build the road out of town!' : this.stub.isCrossing ? 'A road crosses here!' : 'Pick a piece to build!';
+
+        this.instruction = this.add.text(CX, 90, title, {
             fontFamily: 'Arial Black', fontSize: 44, color: '#ffffff',
             stroke: '#00000', strokeThickness: 8
         }).setOrigin(0.5);
@@ -80,6 +82,14 @@ export class RoadBuilder extends Scene
             fontFamily: 'Arial Black', fontSize: 28, color: '#ffffff'
         }).setOrigin(0.5);
         this.add.zone(GAME_WIDTH - 60, 60, 90, 90).setInteractive().on('pointerdown', () => this.cancel());
+
+        if (this.stub.unlocksMap)
+        {
+            this.showUnlockPreview(this.stub.unlocksMap);
+            this.paletteZones.push(this.makeChoiceButton(CX, 760, 'UNLOCK', 0x43a047, () => this.pickUnlock()));
+
+            return;
+        }
 
         //  A canonical two-tile preview — the existing road on the left
         //  connecting to the new grass tile on the right — rather than a
@@ -102,6 +112,35 @@ export class RoadBuilder extends Scene
         {
             this.showPalette();
         }
+    }
+
+    //  A signpost preview of the town this stub would open up, in the same
+    //  style as the real in-world signposts mapBuilder draws at an exit
+    showUnlockPreview (targetId: string)
+    {
+        const targetData = this.cache.json.get(mapCacheKey(targetId)) as MapData | undefined;
+        const label = targetData?.name ?? targetId;
+
+        this.add.rectangle(CX, TILE_Y, 10, 260, 0x795548).setStrokeStyle(3, 0x4e342e);
+
+        const board = this.add.rectangle(CX, TILE_Y - 120, 320, 70, 0xfff3e0);
+        board.setStrokeStyle(5, 0x5d4037);
+
+        this.add.text(CX, TILE_Y - 120, `→ ${label}`, {
+            fontFamily: 'Arial Black', fontSize: 28, color: '#3e2723'
+        }).setOrigin(0.5);
+    }
+
+    pickUnlock ()
+    {
+        for (const zone of this.paletteZones)
+        {
+            zone.destroy();
+        }
+
+        this.paletteZones = [];
+
+        this.finish();
     }
 
     //  Every piece the palette could ever offer, filtered down to only the
@@ -279,18 +318,26 @@ export class RoadBuilder extends Scene
 
         this.finished = true;
 
-        saveExtraRoad(this.mapId, { col: this.targetCol, row: this.targetRow, crossing: this.crossing });
-
-        //  The new tile is now road, so it can keep growing — one
-        //  continuation stub per side the chosen piece opened up
-        for (const side of this.chosenSides)
+        if (this.stub.unlocksMap)
         {
-            saveExtraStub(this.mapId, {
-                id: `${this.mapId}-stub-${this.targetCol}x${this.targetRow}-${side}`,
-                col: this.targetCol,
-                row: this.targetRow,
-                edge: side
-            });
+            saveExtraExit(this.mapId, this.stub.edge, this.stub.unlocksMap);
+            saveUnlockedTown(this.stub.unlocksMap);
+        }
+        else
+        {
+            saveExtraRoad(this.mapId, { col: this.targetCol, row: this.targetRow, crossing: this.crossing });
+
+            //  The new tile is now road, so it can keep growing — one
+            //  continuation stub per side the chosen piece opened up
+            for (const side of this.chosenSides)
+            {
+                saveExtraStub(this.mapId, {
+                    id: `${this.mapId}-stub-${this.targetCol}x${this.targetRow}-${side}`,
+                    col: this.targetCol,
+                    row: this.targetRow,
+                    edge: side
+                });
+            }
         }
 
         //  Pay the road builder

@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { DeliveriesConfig, DeliveryJob, generateJob } from '../deliveries';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { MAP_IDS, MapData, mapCacheKey, parseColour } from '../mapBuilder';
+import { loadActiveMaps, parseColour } from '../mapBuilder';
 import { drawConnectors, drawTownGrid, GAP, layoutTowns, TILE_PX } from '../townGrid';
 import { Driving } from './Driving';
 
@@ -29,17 +29,7 @@ export class DeliveryBoard extends Scene
 
         const driving = this.scene.get('Driving') as Driving;
 
-        const maps: Record<string, MapData> = {};
-
-        for (const id of MAP_IDS)
-        {
-            const data = this.cache.json.get(mapCacheKey(id)) as MapData | undefined;
-
-            if (data)
-            {
-                maps[id] = data;
-            }
-        }
+        const maps = loadActiveMaps(this);
 
         //  No job waiting? Offer a fresh one now.
         let job = driving.deliveryJob;

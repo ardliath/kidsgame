@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
-import { loadBuiltHouses, loadDemolished, loadExtraRoads, loadExtraSites, loadExtraStubs, loadPlayerName, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites } from './storage';
+import { loadBuiltHouses, loadDemolished, loadExtraExits, loadExtraRoads, loadExtraSites, loadExtraStubs, loadPlayerName, loadUnlockedTowns, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites } from './storage';
 
 export const TILE = 200;
 
@@ -9,11 +9,43 @@ export const TILE = 200;
 const MIN_SITES = 3;
 
 export const MAP_IDS = [ 'home-town', 'hill-town', 'beach-town', 'cove-town' ];
+
+//  Bonus towns, invisible until a player-built road reaches their unlock
+//  stub — see Stage 5 of the roads/bridges/tunnels plan
+export const EXTRA_TOWN_IDS = [ 'orchard-town' ];
+
 export const DEFAULT_MAP = 'home-town';
 
 export function mapCacheKey (id: string): string
 {
     return `map-${id}`;
+}
+
+//  Every map currently in play: the fixed set plus whichever bonus towns
+//  have been unlocked, each with its exits overlaid by any a road has since
+//  earned. The one shared source Driving/MiniMap/DeliveryBoard all read
+//  instead of each keeping its own near-identical MAP_IDS loop.
+export function loadActiveMaps (scene: Scene): Record<string, MapData>
+{
+    const unlocked = new Set(loadUnlockedTowns());
+    const ids = [ ...MAP_IDS, ...EXTRA_TOWN_IDS.filter(id => unlocked.has(id)) ];
+    const extraExits = loadExtraExits();
+
+    const maps: Record<string, MapData> = {};
+
+    for (const id of ids)
+    {
+        const data = scene.cache.json.get(mapCacheKey(id)) as MapData | undefined;
+
+        if (!data)
+        {
+            continue; //  Not loaded yet — same silent skip the old per-scene loops used
+        }
+
+        maps[id] = { ...data, exits: { ...data.exits, ...extraExits[id] } };
+    }
+
+    return maps;
 }
 
 export type Edge = 'north' | 'south' | 'east' | 'west';
@@ -487,16 +519,31 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  is waiting to be built
     const candidateStubs: RoadStub[] = [ ...(map.roadStubs ?? []), ...(loadExtraStubs()[map.id] ?? []) ];
     const activeStubs: { stub: RoadStub; targetCol: number; targetRow: number; isCrossing: boolean }[] = [];
+    const unlockedTowns = new Set(loadUnlockedTowns());
 
     for (const stub of candidateStubs)
     {
         const [ dx, dy ] = EDGE_DELTA[stub.edge];
         const targetCol = stub.col + dx;
         const targetRow = stub.row + dy;
+        const offMap = targetRow < 0 || targetRow >= rows || targetCol < 0 || targetCol >= cols;
 
-        if (targetRow < 0 || targetRow >= rows || targetCol < 0 || targetCol >= cols)
+        if (stub.unlocksMap)
         {
-            continue; //  An edge/unlock stub's off-map target is handled from Stage 5 onward
+            //  An unlock stub always points off the edge — no tile of its
+            //  own to pave, just a one-tap confirm once the town beyond
+            //  isn't unlocked yet
+            if (offMap && !unlockedTowns.has(stub.unlocksMap))
+            {
+                activeStubs.push({ stub, targetCol: stub.col, targetRow: stub.row, isCrossing: false });
+            }
+
+            continue;
+        }
+
+        if (offMap)
+        {
+            continue; //  A stub with nothing beyond the edge and no unlock configured
         }
 
         const alreadyRoad = tileAt(targetCol, targetRow) === 'R';
@@ -949,8 +996,15 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     const roadStubs: PlacedRoadStub[] = activeStubs.map(({ stub, targetCol, targetRow, isCrossing }) => {
 
-        const tx = (targetCol + 0.5) * TILE;
-        const ty = (targetRow + 0.5) * TILE;
+        //  An unlock stub has no tile of its own beyond the edge — its
+        //  marker sits right on the boundary line instead, at its own
+        //  tile's position along that edge
+        const [ tx, ty ] = stub.unlocksMap
+            ? stub.edge === 'north' ? [ (stub.col + 0.5) * TILE, 0 ]
+            : stub.edge === 'south' ? [ (stub.col + 0.5) * TILE, height ]
+            : stub.edge === 'west' ? [ 0, (stub.row + 0.5) * TILE ]
+            : [ width, (stub.row + 0.5) * TILE ]
+            : [ (targetCol + 0.5) * TILE, (targetRow + 0.5) * TILE ];
 
         placeRoadStubMarker(tx, ty, stub.edge);
 
@@ -1009,8 +1063,12 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     const yard = yardObj ? drawYard(scene, yardObj, tileAt) : null;
 
-    buildEdgeWalls(scene, map, obstacles, cols, rows, extraRoads);
-    drawSignposts(scene, map, cols, rows, extraRoads);
+    //  A road built out to the edge earns a real exit here — merged in
+    //  fresh each time rather than ever rewriting the static map JSON
+    const effectiveExits: Partial<Record<Edge, string>> = { ...map.exits, ...loadExtraExits()[map.id] };
+
+    buildEdgeWalls(scene, map, obstacles, cols, rows, extraRoads, effectiveExits);
+    drawSignposts(scene, map, cols, rows, extraRoads, effectiveExits);
 
     const start = map.start
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
@@ -1095,7 +1153,7 @@ function range (start: number, count: number): number[]
 
 //  Invisible walls along each map edge, with openings only where a road
 //  meets an edge that connects to another map
-function buildEdgeWalls (scene: Scene, map: MapData, obstacles: Phaser.Physics.Arcade.StaticGroup, cols: number, rows: number, extraRoads: Set<string>)
+function buildEdgeWalls (scene: Scene, map: MapData, obstacles: Phaser.Physics.Arcade.StaticGroup, cols: number, rows: number, extraRoads: Set<string>, exits: Partial<Record<Edge, string>>)
 {
     const isRoadTile = (c: number, r: number) => extraRoads.has(`${c},${r}`) || map.tiles[r][c] === 'R';
 
@@ -1129,23 +1187,18 @@ function buildEdgeWalls (scene: Scene, map: MapData, obstacles: Phaser.Physics.A
         }
     };
 
-    buildEdge(cols, c => isRoadTile(c, 0) && !!map.exits?.north, (center, length) => addWall(center, 0, length, 60));
-    buildEdge(cols, c => isRoadTile(c, rows - 1) && !!map.exits?.south, (center, length) => addWall(center, height, length, 60));
-    buildEdge(rows, r => isRoadTile(0, r) && !!map.exits?.west, (center, length) => addWall(0, center, 60, length));
-    buildEdge(rows, r => isRoadTile(cols - 1, r) && !!map.exits?.east, (center, length) => addWall(width, center, 60, length));
+    buildEdge(cols, c => isRoadTile(c, 0) && !!exits.north, (center, length) => addWall(center, 0, length, 60));
+    buildEdge(cols, c => isRoadTile(c, rows - 1) && !!exits.south, (center, length) => addWall(center, height, length, 60));
+    buildEdge(rows, r => isRoadTile(0, r) && !!exits.west, (center, length) => addWall(0, center, 60, length));
+    buildEdge(rows, r => isRoadTile(cols - 1, r) && !!exits.east, (center, length) => addWall(width, center, 60, length));
 }
 
 //  A small sign naming the town on the other side of each exit, derived
 //  entirely from map.exits and the road gap in the edge wall — no JSON
 //  authoring needed. Purely decorative, never added to obstacles, so it
 //  can never block the exit it's labelling.
-function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number, extraRoads: Set<string>)
+function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number, extraRoads: Set<string>, exits: Partial<Record<Edge, string>>)
 {
-    if (!map.exits)
-    {
-        return;
-    }
-
     const isRoadTile = (c: number, r: number) => extraRoads.has(`${c},${r}`) || map.tiles[r][c] === 'R';
 
     const placeSignpost = (x: number, y: number, targetId: string) => {
@@ -1177,43 +1230,43 @@ function drawSignposts (scene: Scene, map: MapData, cols: number, rows: number, 
         return null;
     };
 
-    if (map.exits.north)
+    if (exits.north)
     {
         const gap = findGapIndex(cols, c => isRoadTile(c, 0));
 
         if (gap !== null)
         {
-            placeSignpost((gap + 1.6) * TILE, TILE * 0.55, map.exits.north);
+            placeSignpost((gap + 1.6) * TILE, TILE * 0.55, exits.north);
         }
     }
 
-    if (map.exits.south)
+    if (exits.south)
     {
         const gap = findGapIndex(cols, c => isRoadTile(c, rows - 1));
 
         if (gap !== null)
         {
-            placeSignpost((gap + 1.6) * TILE, (rows - 1) * TILE + TILE * 0.45, map.exits.south);
+            placeSignpost((gap + 1.6) * TILE, (rows - 1) * TILE + TILE * 0.45, exits.south);
         }
     }
 
-    if (map.exits.west)
+    if (exits.west)
     {
         const gap = findGapIndex(rows, r => isRoadTile(0, r));
 
         if (gap !== null)
         {
-            placeSignpost(TILE * 0.55, (gap + 1.6) * TILE, map.exits.west);
+            placeSignpost(TILE * 0.55, (gap + 1.6) * TILE, exits.west);
         }
     }
 
-    if (map.exits.east)
+    if (exits.east)
     {
         const gap = findGapIndex(rows, r => isRoadTile(cols - 1, r));
 
         if (gap !== null)
         {
-            placeSignpost((cols - 1) * TILE + TILE * 0.45, (gap + 1.6) * TILE, map.exits.east);
+            placeSignpost((cols - 1) * TILE + TILE * 0.45, (gap + 1.6) * TILE, exits.east);
         }
     }
 }

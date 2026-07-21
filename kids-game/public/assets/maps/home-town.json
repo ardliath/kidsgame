@@ -2,9 +2,9 @@
     "id": "home-town",
     "name": "Home Town",
     "tiles": [
-        "............",
-        ".HH.T.......",
-        ".HH.......T.",
+        ".........R..",
+        ".HH.T....R..",
+        ".HH......RT.",
         "..RRRRRRRR..",
         ".TR..HH..R..",
         "..R..HH..R.T",
@@ -70,7 +70,8 @@
         "south": "beach-town"
     },
     "roadStubs": [
-        { "id": "home-stub-1", "col": 2, "row": 5, "edge": "west" }
+        { "id": "home-stub-1", "col": 2, "row": 5, "edge": "west" },
+        { "id": "home-stub-orchard", "col": 9, "row": 0, "edge": "north", "unlocksMap": "orchard-town" }
     ],
     "start": { "col": 6, "row": 10 }
 }

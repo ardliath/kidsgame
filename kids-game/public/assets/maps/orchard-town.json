@@ -1,0 +1,55 @@
+{
+    "id": "orchard-town",
+    "name": "Orchard Town",
+    "tiles": [
+        "............",
+        "..T.......T.",
+        "..RRRRRRRR..",
+        "..R......R..",
+        "..R.HH...R..",
+        "..R.HH...R..",
+        "..R......R..",
+        "..R.T..T.R..",
+        "..RRRRRRRR..",
+        "..R......T..",
+        "..R.........",
+        "..R........."
+    ],
+    "objects": [
+        {
+            "id": "orchard-shop",
+            "type": "house",
+            "col": 4,
+            "row": 9,
+            "w": 2,
+            "h": 1,
+            "colour": "orange",
+            "facing": "north",
+            "sign": "SHOP",
+            "sells": [ "bread", "apple-juice", "pasta" ]
+        },
+        { "id": "orchard-plot-1", "type": "site", "col": 7, "row": 9 },
+        { "id": "orchard-windmill", "type": "landmark", "kind": "windmill", "col": 9, "row": 0 },
+        {
+            "id": "orchard-petrol",
+            "type": "house",
+            "col": 10,
+            "row": 4,
+            "w": 2,
+            "h": 1,
+            "colour": "grey",
+            "facing": "west",
+            "sign": "PETROL",
+            "shopType": "petrol"
+        }
+    ],
+    "cars": [
+        { "col": 2, "row": 3, "facing": "south", "colour": "green", "model": "hatch" },
+        { "col": 9, "row": 6, "facing": "north", "colour": "yellow", "model": "racer" },
+        { "col": 5, "row": 2, "facing": "east", "colour": "red", "model": "truck" }
+    ],
+    "exits": {
+        "south": "home-town"
+    },
+    "start": { "col": 4, "row": 6 }
+}

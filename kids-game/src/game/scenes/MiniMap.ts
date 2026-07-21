@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
-import { MAP_IDS, MapData, mapCacheKey, TILE } from '../mapBuilder';
+import { loadActiveMaps, MapData, TILE } from '../mapBuilder';
 import { listKnownDestinations, NavDestination } from '../navigation';
 import { loadFleet } from '../storage';
 import { drawConnectors, drawTownGrid, GAP, layoutTowns, TILE_PX } from '../townGrid';
@@ -21,17 +21,7 @@ export class MiniMap extends Scene
         //  Dim the game behind and swallow stray taps
         this.add.rectangle(CX, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6).setInteractive();
 
-        const maps: Record<string, MapData> = {};
-
-        for (const id of MAP_IDS)
-        {
-            const data = this.cache.json.get(mapCacheKey(id)) as MapData | undefined;
-
-            if (data)
-            {
-                maps[id] = data;
-            }
-        }
+        const maps = loadActiveMaps(this);
 
         //  Place the towns on a grid by following their exits, so the map
         //  reflects however the JSON connects them

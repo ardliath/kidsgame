@@ -22,6 +22,8 @@ const FUEL_KEY = 'kids-game-fuel';
 const WASH_KEY = 'kids-game-dirt';
 const EXTRA_ROADS_KEY = 'kids-game-extra-roads';
 const EXTRA_STUBS_KEY = 'kids-game-extra-stubs';
+const UNLOCKED_TOWNS_KEY = 'kids-game-unlocked-towns';
+const EXTRA_EXITS_KEY = 'kids-game-extra-exits';
 
 export interface SaveData
 {
@@ -687,6 +689,71 @@ export function saveExtraStubs (all: Record<string, PersistedRoadStub[]>)
     try
     {
         localStorage.setItem(EXTRA_STUBS_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  Ignore
+    }
+}
+
+//  Bonus towns (see mapBuilder's EXTRA_TOWN_IDS) the player has reached by
+//  building a road out to the edge of an existing map — invisible (no
+//  MiniMap marker, never a delivery target) until its id shows up here
+export function loadUnlockedTowns (): string[]
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(UNLOCKED_TOWNS_KEY) ?? '[]') as string[];
+    }
+    catch
+    {
+        return [];
+    }
+}
+
+export function saveUnlockedTown (mapId: string)
+{
+    try
+    {
+        const all = loadUnlockedTowns();
+
+        if (!all.includes(mapId))
+        {
+            all.push(mapId);
+            localStorage.setItem(UNLOCKED_TOWNS_KEY, JSON.stringify(all));
+        }
+    }
+    catch
+    {
+        //  Ignore: worst case the unlock has to be rebuilt next time
+    }
+}
+
+//  The exit a parent map gained once a player-built road reached its edge —
+//  the far side (the bonus town's own JSON) already has its exit back
+//  authored in from the start, so only this side is ever dynamic
+export function loadExtraExits (): Record<string, Partial<Record<Edge, string>>>
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(EXTRA_EXITS_KEY) ?? '{}') as Record<string, Partial<Record<Edge, string>>>;
+    }
+    catch
+    {
+        return {};
+    }
+}
+
+export function saveExtraExit (mapId: string, edge: Edge, targetId: string)
+{
+    try
+    {
+        const all = loadExtraExits();
+        const forMap = all[mapId] ?? {};
+
+        forMap[edge] = targetId;
+        all[mapId] = forMap;
+        localStorage.setItem(EXTRA_EXITS_KEY, JSON.stringify(all));
     }
     catch
     {

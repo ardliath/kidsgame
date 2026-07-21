@@ -3,7 +3,7 @@ import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { DeliveriesConfig, DeliveryJob, generateJob } from '../deliveries';
-import { buildMap, DEFAULT_MAP, Edge, MAP_IDS, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedRoadStub, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
+import { buildMap, DEFAULT_MAP, Edge, loadActiveMaps, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedRoadStub, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch } from '../sfx';
 import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDirt, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDirt, saveFleet, saveFuel, saveNavTarget, savePantry, SaveData } from '../storage';
@@ -163,17 +163,7 @@ export class Driving extends Scene
 
         this.navTarget = loadNavTarget();
         this.deliveryJob = loadDelivery();
-        this.allMaps = {};
-
-        for (const id of MAP_IDS)
-        {
-            const data = this.cache.json.get(mapCacheKey(id)) as MapData | undefined;
-
-            if (data)
-            {
-                this.allMaps[id] = data;
-            }
-        }
+        this.allMaps = loadActiveMaps(this);
 
         this.ensureDeliveryOffered();
 
@@ -1129,7 +1119,7 @@ export class Driving extends Scene
 
     exitMap (edge: Edge)
     {
-        const target = this.map.exits?.[edge];
+        const target = this.allMaps[this.map.id]?.exits?.[edge];
 
         if (!target || this.transitioning)
         {
