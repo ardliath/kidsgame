@@ -85,6 +85,7 @@ export class Dashboard extends Scene
         this.createMapButton();
         this.createYardButton();
         this.createDeliveryButton();
+        this.createRoadButton();
 
         this.repaintPanel();
         this.registry.events.on('changedata-carColour', this.repaintPanel, this);
@@ -369,6 +370,28 @@ export class Dashboard extends Scene
         this.deliveryIcon = this.add.container(GAME_WIDTH - 320, 50, parts);
 
         this.add.zone(GAME_WIDTH - 320, 50, 90, 90).setInteractive().on('pointerdown', () => this.openDelivery());
+    }
+
+    createRoadButton ()
+    {
+        const parts: Phaser.GameObjects.GameObject[] = [
+            this.add.circle(0, 0, 36, 0x102027, 0.45)
+        ];
+
+        //  A little grey road tile with a centre dash and a green "+"
+        parts.push(this.add.rectangle(0, 2, 34, 44, 0x555555).setStrokeStyle(2, 0x9e9e9e));
+        parts.push(this.add.rectangle(0, 2, 6, 14, 0xffffff));
+        parts.push(this.add.rectangle(14, -16, 20, 7, 0x9ccc65));
+        parts.push(this.add.rectangle(14, -16, 7, 20, 0x9ccc65));
+
+        this.add.container(GAME_WIDTH - 410, 50, parts);
+
+        this.add.zone(GAME_WIDTH - 410, 50, 90, 90).setInteractive().on('pointerdown', () => {
+
+            const driving = this.scene.get('Driving') as Driving;
+            driving?.toggleRoadMode();
+
+        });
     }
 
     //  Drop the controls so the car isn't stuck accelerating while paused

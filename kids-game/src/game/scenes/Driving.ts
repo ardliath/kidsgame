@@ -3,10 +3,10 @@ import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { DeliveriesConfig, DeliveryJob, generateJob } from '../deliveries';
-import { buildMap, DEFAULT_MAP, Edge, loadActiveMaps, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedRoadStub, PlacedSite, PlacedYard, TILE } from '../mapBuilder';
+import { buildMap, DEFAULT_MAP, Edge, loadActiveMaps, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedUnlockMarker, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
-import { initSfx, playBrake, playCrunch } from '../sfx';
-import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDirt, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDirt, saveFleet, saveFuel, saveNavTarget, savePantry, SaveData } from '../storage';
+import { initSfx, playBrake, playCrunch, playSplash } from '../sfx';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDirt, loadExtraRoads, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDirt, saveExtraExit, saveExtraRoad, saveExtraRoads, saveFleet, saveFuel, saveNavTarget, savePantry, saveUnlockedTown, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -77,8 +77,7 @@ type ActionTarget =
     { kind: 'swap'; model: string; x: number; y: number; heading: number; height: number } |
     { kind: 'pickup'; x: number; y: number; height: number } |
     { kind: 'deliver'; x: number; y: number; height: number } |
-    { kind: 'refuel'; house: PlacedHouse } |
-    { kind: 'road'; stub: PlacedRoadStub };
+    { kind: 'refuel'; house: PlacedHouse };
 
 interface DrivingData
 {
@@ -105,10 +104,16 @@ export class Driving extends Scene
     houses: PlacedHouse[] = [];
     sites: PlacedSite[] = [];
     landmarks: PlacedLandmark[] = [];
-    roadStubs: PlacedRoadStub[] = [];
     extraRoads: Set<string> = new Set();
+    unlockMarkers: PlacedUnlockMarker[] = [];
+    blockedTiles: Set<string> = new Set();
     npcCars: NpcCarState[] = [];
     npcGroup: Phaser.Physics.Arcade.Group;
+
+    //  Road-build mode: tap empty squares next to a road to pave them
+    roadMode = false;
+    roadModeLayer: Phaser.GameObjects.Container | null = null;
+    crossingOverlays: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
 
     //  Fleet vehicles left parked out in this town, offered as SWAP targets
     parkedFleet: { model: string; x: number; y: number; heading: number }[] = [];
@@ -239,8 +244,12 @@ export class Driving extends Scene
         this.houses = built.houses;
         this.sites = built.sites;
         this.landmarks = built.landmarks;
-        this.roadStubs = built.roadStubs;
         this.extraRoads = built.extraRoads;
+        this.unlockMarkers = built.unlockMarkers;
+        this.blockedTiles = built.blockedTiles;
+        this.roadMode = false;
+        this.roadModeLayer = null;
+        this.crossingOverlays.clear();
         this.bubbleTarget = null;
 
         this.physics.world.setBounds(0, 0, built.width, built.height);
@@ -318,6 +327,9 @@ export class Driving extends Scene
             }
 
         });
+
+        //  Taps on the map area build roads while in road-build mode
+        this.input.on('pointerdown', this.onRoadTap, this);
 
         if (!this.scene.isActive('Dashboard'))
         {
@@ -435,6 +447,235 @@ export class Driving extends Scene
         }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
 
         this.tweens.add({ targets: toast, alpha: 0, delay: 1400, duration: 500, onComplete: () => toast.destroy() });
+    }
+
+    //  ---- Road-build mode ----
+    //  A tap-anywhere build mode, toggled from the dashboard. The car parks,
+    //  the map goes tappable, and tapping an empty square next to a road paves
+    //  it for +1 gold. Tiles are drawn instantly as plain grey; a single full
+    //  rebuild on exit repaints everything with proper kerbs, lines, crossings
+    //  and re-routes the NPC traffic onto the new roads.
+
+    toggleRoadMode ()
+    {
+        if (this.transitioning)
+        {
+            return;
+        }
+
+        if (this.roadMode)
+        {
+            this.exitRoadMode();
+        }
+        else
+        {
+            this.enterRoadMode();
+        }
+    }
+
+    enterRoadMode ()
+    {
+        this.roadMode = true;
+
+        const dashboard = this.scene.get('Dashboard') as Dashboard;
+        dashboard.releaseControls();
+
+        this.speed = 0;
+        (this.car.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+
+        this.actionBubble.setVisible(false);
+
+        //  A banner and a big DONE button, both pinned to the screen — sat
+        //  below the dashboard's own top icon row so neither one covers it
+        const banner = this.add.rectangle(GAME_WIDTH / 2, 150, 560, 56, 0x102027, 0.85).setStrokeStyle(4, 0x9ccc65);
+        const text = this.add.text(GAME_WIDTH / 2, 150, 'Tap a square to build a road!', {
+            fontFamily: 'Arial Black', fontSize: 26, color: '#c5e1a5'
+        }).setOrigin(0.5);
+
+        const doneBg = this.add.graphics();
+        doneBg.fillStyle(0x43a047, 1);
+        doneBg.fillRoundedRect(GAME_WIDTH / 2 - 85, 195, 170, 60, 16);
+        doneBg.lineStyle(5, 0x1b5e20, 1);
+        doneBg.strokeRoundedRect(GAME_WIDTH / 2 - 85, 195, 170, 60, 16);
+
+        const doneText = this.add.text(GAME_WIDTH / 2, 225, 'DONE', {
+            fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff'
+        }).setOrigin(0.5);
+
+        const doneZone = this.add.zone(GAME_WIDTH / 2, 225, 180, 72).setInteractive();
+        doneZone.on('pointerdown', () => this.exitRoadMode());
+
+        this.roadModeLayer = this.add.container(0, 0, [ banner, text, doneBg, doneText, doneZone ]);
+        this.roadModeLayer.setScrollFactor(0).setDepth(210);
+    }
+
+    exitRoadMode ()
+    {
+        this.roadMode = false;
+        this.roadModeLayer?.destroy();
+        this.roadModeLayer = null;
+
+        //  One clean rebuild so kerbs, lines, crossings and NPC routing all
+        //  catch up with everything just paved
+        this.scene.restart({
+            mapId: this.registry.get('mapId') as string,
+            entry: { x: this.car.x, y: this.car.y, heading: this.heading, speed: 0 }
+        });
+    }
+
+    //  The map area starts below the banner/DONE button strip; the dashboard
+    //  sits below the camera viewport, so taps there never reach this scene
+    onRoadTap (pointer: Phaser.Input.Pointer)
+    {
+        if (!this.roadMode || this.transitioning || pointer.y < 270)
+        {
+            return;
+        }
+
+        const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        const col = Math.floor(world.x / TILE);
+        const row = Math.floor(world.y / TILE);
+
+        //  Tapping an existing crossroads cycles its look between a plain
+        //  junction, a bridge and a tunnel
+        if (this.isRoadTile(col, row) && this.isFourWayCrossing(col, row))
+        {
+            this.cycleCrossing(col, row);
+
+            return;
+        }
+
+        if (this.canPlaceRoad(col, row))
+        {
+            this.placeRoad(col, row);
+        }
+    }
+
+    canPlaceRoad (col: number, row: number): boolean
+    {
+        const rows = this.map.tiles.length;
+        const cols = this.map.tiles[0].length;
+
+        if (row < 0 || row >= rows || col < 0 || col >= cols)
+        {
+            return false;
+        }
+
+        //  Only bare grass, never a tree/water/sand/house tile or one already
+        //  taken by a building, site, the yard, or a road
+        if (this.map.tiles[row][col] !== '.' || this.extraRoads.has(`${col},${row}`) || this.blockedTiles.has(`${col},${row}`))
+        {
+            return false;
+        }
+
+        //  Must touch a road, so the network only ever grows outward
+        return this.isRoadTile(col - 1, row) || this.isRoadTile(col + 1, row)
+            || this.isRoadTile(col, row - 1) || this.isRoadTile(col, row + 1);
+    }
+
+    placeRoad (col: number, row: number)
+    {
+        const mapId = this.registry.get('mapId') as string;
+
+        this.extraRoads.add(`${col},${row}`);
+        saveExtraRoad(mapId, { col, row });
+
+        const coins = ((this.registry.get('coins') as number) ?? 0) + 1;
+        this.registry.set('coins', coins);
+        saveCoins(coins);
+
+        playSplash();
+
+        //  Instant plain-grey feedback (proper kerbs/lines come on the rebuild)
+        const x = (col + 0.5) * TILE;
+        const y = (row + 0.5) * TILE;
+        const tile = this.add.rectangle(x, y, TILE, TILE, 0x555555).setDepth(1).setScale(0);
+        this.tweens.add({ targets: tile, scaleX: 1, scaleY: 1, duration: 140, ease: 'Back.Out' });
+
+        const marker = this.unlockMarkers.find(m => m.col === col && m.row === row);
+
+        if (marker)
+        {
+            saveExtraExit(mapId, marker.edge, marker.unlocksMap);
+            saveUnlockedTown(marker.unlocksMap);
+
+            const targetData = this.cache.json.get(mapCacheKey(marker.unlocksMap)) as MapData | undefined;
+            this.showToast(`You reached ${targetData?.name ?? 'a new town'}!`);
+
+            //  Leave build mode after a beat so the rebuild brings the town in
+            this.time.delayedCall(1100, () => {
+                if (this.roadMode)
+                {
+                    this.exitRoadMode();
+                }
+            });
+        }
+    }
+
+    isFourWayCrossing (col: number, row: number): boolean
+    {
+        return this.isRoadTile(col - 1, row) && this.isRoadTile(col + 1, row)
+            && this.isRoadTile(col, row - 1) && this.isRoadTile(col, row + 1);
+    }
+
+    cycleCrossing (col: number, row: number)
+    {
+        const mapId = this.registry.get('mapId') as string;
+        const all = loadExtraRoads();
+        const list = all[mapId] ?? [];
+
+        let entry = list.find(t => t.col === col && t.row === row);
+
+        if (!entry)
+        {
+            entry = { col, row };
+            list.push(entry);
+        }
+
+        const order: (('ns-over' | 'ew-over') | undefined)[] = [ undefined, 'ns-over', 'ew-over' ];
+        entry.crossing = order[(order.indexOf(entry.crossing ?? undefined) + 1) % order.length];
+
+        all[mapId] = list;
+        saveExtraRoads(all);
+
+        this.drawCrossingOverlay(col, row, entry.crossing);
+        this.showToast(entry.crossing === 'ns-over' ? 'Bridge!' : entry.crossing === 'ew-over' ? 'Tunnel!' : 'Crossroads');
+    }
+
+    //  Live bridge/tunnel decoration on a crossing tile while in build mode,
+    //  redrawn from scratch each cycle (the exit rebuild draws it for real)
+    drawCrossingOverlay (col: number, row: number, style: 'ns-over' | 'ew-over' | undefined)
+    {
+        const key = `${col},${row}`;
+
+        this.crossingOverlays.get(key)?.forEach(o => o.destroy());
+        this.crossingOverlays.delete(key);
+
+        if (!style)
+        {
+            return;
+        }
+
+        const cx = (col + 0.5) * TILE;
+        const cy = (row + 0.5) * TILE;
+        const parts: Phaser.GameObjects.GameObject[] = [];
+
+        if (style === 'ns-over')
+        {
+            parts.push(this.add.rectangle(col * TILE + 6, cy, 46, 60, 0x263238).setDepth(2));
+            parts.push(this.add.rectangle((col + 1) * TILE - 6, cy, 46, 60, 0x263238).setDepth(2));
+            parts.push(this.add.rectangle(cx + 8, cy + 8, 74, TILE, 0x000000, 0.18).setDepth(2));
+            parts.push(this.add.rectangle(cx, cy, 74, TILE, 0xa1887f).setStrokeStyle(4, 0x6d4c41).setDepth(2));
+        }
+        else
+        {
+            parts.push(this.add.rectangle(cx, row * TILE + 6, 60, 46, 0x263238).setDepth(2));
+            parts.push(this.add.rectangle(cx, (row + 1) * TILE - 6, 60, 46, 0x263238).setDepth(2));
+            parts.push(this.add.rectangle(cx + 8, cy + 8, TILE, 74, 0x000000, 0.18).setDepth(2));
+            parts.push(this.add.rectangle(cx, cy, TILE, 74, 0xa1887f).setStrokeStyle(4, 0x6d4c41).setDepth(2));
+        }
+
+        this.crossingOverlays.set(key, parts);
     }
 
     //  Sets (or clears) the active delivery job, persists it, and points the
@@ -630,11 +871,6 @@ export class Driving extends Scene
             consider(parked.x, parked.y, 68, 68, { kind: 'swap', model: parked.model, x: parked.x, y: parked.y, heading: parked.heading, height: 68 });
         }
 
-        for (const stub of this.roadStubs)
-        {
-            consider(stub.x, stub.y, stub.width, stub.height, { kind: 'road', stub });
-        }
-
         //  A pickup/deliver spot is often the exact same building as a shop
         //  or house (e.g. picking up from a café you could otherwise browse)
         //  — checked separately, and given first claim on `best` below, so it
@@ -700,7 +936,6 @@ export class Driving extends Scene
             const t = this.bubbleTarget;
             const at = t.kind === 'build' ? t.site
                 : (t.kind === 'swap' || t.kind === 'pickup' || t.kind === 'deliver') ? t
-                : t.kind === 'road' ? t.stub
                 : t.house;
 
             if (t.kind === 'build')
@@ -738,12 +973,6 @@ export class Driving extends Scene
                 this.bubbleBg.setFillStyle(0xfff9c4);
                 this.bubbleBg.setStrokeStyle(5, 0xf9a825);
                 this.bubbleLabel.setText('FUEL').setColor('#f57f17');
-            }
-            else if (t.kind === 'road')
-            {
-                this.bubbleBg.setFillStyle(0x9e9e9e);
-                this.bubbleBg.setStrokeStyle(5, 0x424242);
-                this.bubbleLabel.setText('ROAD').setColor('#212121');
             }
             else if (t.house.shopType === 'treat')
             {
@@ -821,10 +1050,6 @@ export class Driving extends Scene
         else if (target.kind === 'visit')
         {
             this.scene.launch('Interior', { houseId: target.house.id, colour: target.house.colour });
-        }
-        else if (target.kind === 'road')
-        {
-            this.scene.launch('RoadBuilder', { mapId: this.registry.get('mapId') as string, stub: target.stub });
         }
         else if (target.house.shopType === 'treat')
         {
@@ -1156,6 +1381,16 @@ export class Driving extends Scene
     {
         if (this.transitioning)
         {
+            return;
+        }
+
+        //  In build mode the car is parked and the map is a tap target
+        if (this.roadMode)
+        {
+            this.speed = 0;
+            (this.car.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+            this.registry.set('speed', 0);
+
             return;
         }
 

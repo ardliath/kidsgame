@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
-import { loadBuiltHouses, loadDemolished, loadExtraExits, loadExtraRoads, loadExtraSites, loadExtraStubs, loadPlayerName, loadUnlockedTowns, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites } from './storage';
+import { loadBuiltHouses, loadDemolished, loadExtraExits, loadExtraRoads, loadExtraSites, loadPlayerName, loadUnlockedTowns, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites } from './storage';
 
 export const TILE = 200;
 
@@ -110,17 +110,16 @@ export interface CarPlacement
     facing?: Edge;
 }
 
-//  A place a new road piece can be attached — sits on an existing road tile,
-//  pointing (via `edge`) at the adjacent grass/boundary it can grow into.
-//  `unlocksMap` is only set on the small set of edge-of-map stubs that reveal
-//  a whole new town once built (see Stage 5 of the roads/bridges/tunnels plan).
+//  An edge tile that, once the player paves a road onto it in build mode,
+//  reveals a whole new town (see the road-building feature). `edge` is which
+//  map boundary it sits on; `unlocksMap` is the town it opens up.
 export interface RoadStub
 {
     id: string;
     col: number;
     row: number;
     edge: Edge;
-    unlocksMap?: string;
+    unlocksMap: string;
 }
 
 export interface MapData
@@ -159,26 +158,14 @@ export interface PlacedSite
     height: number;
 }
 
-//  A road stub still open for a new piece — x/y is the grass/target tile
-//  it would pave, not the existing road tile it grows from
-export interface PlacedRoadStub
+//  An edge tile the player can pave a road onto to unlock a new town —
+//  col/row is the tile itself, edge is the boundary it sits on
+export interface PlacedUnlockMarker
 {
-    id: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
+    col: number;
+    row: number;
     edge: Edge;
-    unlocksMap?: string;
-
-    //  Which of the target tile's other 3 sides are currently buildable —
-    //  in bounds, plain grass, not already reserved by a house/site/yard/
-    //  another stub. Lets RoadBuilder offer only pieces the terrain allows.
-    validSides: Edge[];
-
-    //  The target tile is already a live perpendicular road — RoadBuilder
-    //  offers a bridge/tunnel choice instead of the normal piece palette
-    isCrossing: boolean;
+    unlocksMap: string;
 }
 
 //  The builders' yard: where the fleet parks. `spawn*` is the road tile the
@@ -230,7 +217,14 @@ export interface BuiltMap
     npcCars: PlacedNpcCar[];
     yard: PlacedYard | null;
     landmarks: PlacedLandmark[];
-    roadStubs: PlacedRoadStub[];
+
+    //  Edge tiles that unlock a new town once paved (only those whose town
+    //  isn't unlocked yet), so build mode knows which placements to reward
+    unlockMarkers: PlacedUnlockMarker[];
+
+    //  Tiles taken by something the player can't pave over — house/site/yard/
+    //  landmark footprints — so build mode can reject a tap there
+    blockedTiles: Set<string>;
 
     //  "col,row" keys the player has paved since — the same overlay tileAt()
     //  consults, exposed so traffic routing can see player-built road too
@@ -514,106 +508,39 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         markFootprint(y.col, y.row, y.w ?? 3, y.h ?? 2);
     }
 
-    //  Road stubs' target tiles must be kept clear of the auto-site system
-    //  too, or a future top-up could pave right over a place a road piece
-    //  is waiting to be built
-    const candidateStubs: RoadStub[] = [ ...(map.roadStubs ?? []), ...(loadExtraStubs()[map.id] ?? []) ];
-    const activeStubs: { stub: RoadStub; targetCol: number; targetRow: number; isCrossing: boolean }[] = [];
+    //  Player-paved road tiles are off-limits to the auto-site system, or a
+    //  top-up could drop a house straight onto a road he just built
+    for (const key of extraRoads)
+    {
+        occupied.add(key);
+    }
+
+    //  Edge tiles that still unlock a town (once paved). Reserve the whole
+    //  grass corridor from each edge tile inward to the nearest road from the
+    //  auto-site system, so nothing can block the route out — but keep those
+    //  tiles player-buildable (see unlockPathTiles / blockedTiles below).
     const unlockedTowns = new Set(loadUnlockedTowns());
+    const unlockPathTiles = new Set<string>();
 
-    for (const stub of candidateStubs)
-    {
-        const [ dx, dy ] = EDGE_DELTA[stub.edge];
-        const targetCol = stub.col + dx;
-        const targetRow = stub.row + dy;
-        const offMap = targetRow < 0 || targetRow >= rows || targetCol < 0 || targetCol >= cols;
+    const unlockMarkers: PlacedUnlockMarker[] = (map.roadStubs ?? [])
+        .filter(stub => !unlockedTowns.has(stub.unlocksMap) && tileAt(stub.col, stub.row) !== 'R')
+        .map(stub => {
+            //  Walk from the edge tile inward (away from the boundary) over
+            //  grass until we meet a road, reserving each tile on the way
+            const [ idx, idy ] = EDGE_DELTA[OPPOSITE_EDGE[stub.edge]];
+            let c = stub.col;
+            let r = stub.row;
 
-        if (stub.unlocksMap)
-        {
-            //  An unlock stub always points off the edge — no tile of its
-            //  own to pave, just a one-tap confirm once the town beyond
-            //  isn't unlocked yet
-            if (offMap && !unlockedTowns.has(stub.unlocksMap))
+            while (r >= 0 && r < rows && c >= 0 && c < cols && tileAt(c, r) === '.')
             {
-                activeStubs.push({ stub, targetCol: stub.col, targetRow: stub.row, isCrossing: false });
+                unlockPathTiles.add(`${c},${r}`);
+                markFootprint(c, r, 1, 1);
+                c += idx;
+                r += idy;
             }
 
-            continue;
-        }
-
-        if (offMap)
-        {
-            continue; //  A stub with nothing beyond the edge and no unlock configured
-        }
-
-        const alreadyRoad = tileAt(targetCol, targetRow) === 'R';
-
-        if (alreadyRoad)
-        {
-            //  Only a genuine crossing if a PERPENDICULAR road already runs
-            //  through the target *independently* — a perpendicular
-            //  neighbour that's road only because the target itself later
-            //  grew a child stub that way (a corner turn continuing this
-            //  same path) doesn't count, or every corner would wrongly
-            //  resurface its parent stub as a "crossing" once built
-            const perpendicular: Edge[] = (stub.edge === 'north' || stub.edge === 'south') ? [ 'east', 'west' ] : [ 'north', 'south' ];
-
-            const isCrossing = perpendicular.some(side => {
-                const [ pdx, pdy ] = EDGE_DELTA[side];
-
-                if (tileAt(targetCol + pdx, targetRow + pdy) !== 'R')
-                {
-                    return false;
-                }
-
-                const grownFromTarget = candidateStubs.some(s => s.col === targetCol && s.row === targetRow && s.edge === side);
-
-                return !grownFromTarget;
-            });
-
-            if (!isCrossing || crossingByTile.has(`${targetCol},${targetRow}`))
-            {
-                continue; //  Already built, and either not a crossing or already resolved
-            }
-
-            activeStubs.push({ stub, targetCol, targetRow, isCrossing: true });
-            continue;
-        }
-
-        activeStubs.push({ stub, targetCol, targetRow, isCrossing: false });
-        markFootprint(targetCol, targetRow, 1, 1);
-    }
-
-    //  Which of each target tile's other 3 sides a piece could open —
-    //  computed only after every active stub has reserved its own target
-    //  above, so two stubs can't both claim the same neighbouring tile
-    const stubValidSides = new Map<string, Edge[]>();
-
-    for (const { stub, targetCol, targetRow } of activeStubs)
-    {
-        const entrySide = OPPOSITE_EDGE[stub.edge];
-        const otherSides = (Object.keys(EDGE_DELTA) as Edge[]).filter(e => e !== entrySide);
-        const valid: Edge[] = [];
-
-        for (const side of otherSides)
-        {
-            const [ sdx, sdy ] = EDGE_DELTA[side];
-            const nc = targetCol + sdx;
-            const nr = targetRow + sdy;
-
-            if (nr < 0 || nr >= rows || nc < 0 || nc >= cols)
-            {
-                continue;
-            }
-
-            if (tileAt(nc, nr) === '.' && !occupied.has(`${nc},${nr}`))
-            {
-                valid.push(side);
-            }
-        }
-
-        stubValidSides.set(stub.id, valid);
-    }
+            return { col: stub.col, row: stub.row, edge: stub.edge, unlocksMap: stub.unlocksMap };
+        });
 
     const pickEmptyGrass = (): { col: number; row: number } | null => {
 
@@ -990,38 +917,26 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
-    //  ---- Road stubs: draw a marker at each place a new road piece can
-    //  still be attached (activeStubs was already computed and reserved
-    //  earlier, alongside the auto-site system's own footprint marking) ----
+    //  ---- Unlock hints: a signpost on each still-locked edge tile so the
+    //  player can see where a new town is waiting to be reached by road ----
 
-    const placeRoadStubMarker = (x: number, y: number, edge: Edge) => {
+    for (const marker of unlockMarkers)
+    {
+        const x = (marker.col + 0.5) * TILE;
+        const y = (marker.row + 0.5) * TILE;
+        const targetData = scene.cache.json.get(mapCacheKey(marker.unlocksMap)) as MapData | undefined;
+        const label = targetData?.name ?? marker.unlocksMap;
 
-        scene.add.rectangle(x, y, TILE - 20, TILE - 20, 0x9e9e9e, 0.35).setStrokeStyle(4, 0x616161);
+        //  A faint green highlight marking the tile as buildable
+        scene.add.rectangle(x, y, TILE - 16, TILE - 16, 0x9ccc65, 0.45).setStrokeStyle(4, 0x558b2f).setDepth(4);
 
-        //  Triangle points must be non-negative or Phaser miscentres it
-        const arrow = scene.add.triangle(0, -10, 0, 20, 24, 20, 12, 0, 0x616161);
-        scene.add.container(x, y, [ arrow ]).setRotation(EDGE_ROTATION[edge]);
-    };
-
-    const roadStubs: PlacedRoadStub[] = activeStubs.map(({ stub, targetCol, targetRow, isCrossing }) => {
-
-        //  An unlock stub has no tile of its own beyond the edge — its
-        //  marker sits right on the boundary line instead, at its own
-        //  tile's position along that edge
-        const [ tx, ty ] = stub.unlocksMap
-            ? stub.edge === 'north' ? [ (stub.col + 0.5) * TILE, 0 ]
-            : stub.edge === 'south' ? [ (stub.col + 0.5) * TILE, height ]
-            : stub.edge === 'west' ? [ 0, (stub.row + 0.5) * TILE ]
-            : [ width, (stub.row + 0.5) * TILE ]
-            : [ (targetCol + 0.5) * TILE, (targetRow + 0.5) * TILE ];
-
-        placeRoadStubMarker(tx, ty, stub.edge);
-
-        return {
-            id: stub.id, x: tx, y: ty, width: TILE - 20, height: TILE - 20, edge: stub.edge, unlocksMap: stub.unlocksMap,
-            validSides: stubValidSides.get(stub.id) ?? [], isCrossing
-        };
-    });
+        //  A little signpost above it naming the town
+        scene.add.rectangle(x, y, 10, TILE * 0.42, 0x795548).setStrokeStyle(2, 0x4e342e).setDepth(5);
+        scene.add.rectangle(x, y - TILE * 0.28, 168, 44, 0xfff3e0).setStrokeStyle(4, 0x5d4037).setDepth(5);
+        scene.add.text(x, y - TILE * 0.28, `→ ${label}`, {
+            fontFamily: 'Arial Black', fontSize: 18, color: '#3e2723'
+        }).setOrigin(0.5).setDepth(5);
+    }
 
     const landmarks: PlacedLandmark[] = [];
 
@@ -1083,7 +998,22 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         ? { x: (map.start.col + 0.5) * TILE, y: (map.start.row + 0.5) * TILE }
         : { x: width / 2, y: height / 2 };
 
-    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, roadStubs, extraRoads };
+    //  Everything build mode must not let the player pave over — the auto-site
+    //  system's `occupied` set, minus the unlock tiles (which he's meant to
+    //  build on) and minus player roads (already road, rejected separately)
+    const blockedTiles = new Set(occupied);
+
+    for (const key of unlockPathTiles)
+    {
+        blockedTiles.delete(key);
+    }
+
+    for (const key of extraRoads)
+    {
+        blockedTiles.delete(key);
+    }
+
+    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, unlockMarkers, blockedTiles, extraRoads };
 }
 
 //  The builders' yard: a fenced gravel plot the fleet parks in. The player
