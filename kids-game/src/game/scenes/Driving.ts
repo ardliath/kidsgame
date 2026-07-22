@@ -502,7 +502,13 @@ export class Driving extends Scene
             fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff'
         }).setOrigin(0.5);
 
+        //  A container's own setScrollFactor(0) only fixes how it *renders* —
+        //  Phaser's input hit-test reads each interactive object's own scroll
+        //  factor, not its parent's, so the zone needs this set directly or
+        //  its tappable area silently drifts away from the visible button
+        //  the moment the camera (which follows the car) scrolls anywhere
         const doneZone = this.add.zone(GAME_WIDTH / 2, 225, 180, 72).setInteractive();
+        doneZone.setScrollFactor(0);
         doneZone.on('pointerdown', () => this.exitRoadMode());
 
         this.roadModeLayer = this.add.container(0, 0, [ banner, text, doneBg, doneText, doneZone ]);
