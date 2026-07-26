@@ -105,6 +105,7 @@ export class Driving extends Scene
     sites: PlacedSite[] = [];
     landmarks: PlacedLandmark[] = [];
     extraRoads: Set<string> = new Set();
+    tunnelTiles: Set<string> = new Set();
     unlockMarkers: PlacedUnlockMarker[] = [];
     blockedTiles: Set<string> = new Set();
     npcCars: NpcCarState[] = [];
@@ -112,7 +113,11 @@ export class Driving extends Scene
 
     //  Road-build mode: tap empty squares next to a road to pave them
     roadMode = false;
+    buildTool: 'road' | 'tunnel' = 'road';
     roadModeLayer: Phaser.GameObjects.Container | null = null;
+    buildBanner: Phaser.GameObjects.Text | null = null;
+    roadToolRoad: Phaser.GameObjects.Container | null = null;
+    roadToolTunnel: Phaser.GameObjects.Container | null = null;
     crossingOverlays: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
 
     //  Fleet vehicles left parked out in this town, offered as SWAP targets
@@ -245,10 +250,15 @@ export class Driving extends Scene
         this.sites = built.sites;
         this.landmarks = built.landmarks;
         this.extraRoads = built.extraRoads;
+        this.tunnelTiles = built.tunnelTiles;
         this.unlockMarkers = built.unlockMarkers;
         this.blockedTiles = built.blockedTiles;
         this.roadMode = false;
+        this.buildTool = 'road';
         this.roadModeLayer = null;
+        this.buildBanner = null;
+        this.roadToolRoad = null;
+        this.roadToolTunnel = null;
         this.crossingOverlays.clear();
         this.bubbleTarget = null;
 
@@ -476,6 +486,7 @@ export class Driving extends Scene
     enterRoadMode ()
     {
         this.roadMode = true;
+        this.buildTool = 'road';
 
         const dashboard = this.scene.get('Dashboard') as Dashboard;
         dashboard.releaseControls();
@@ -485,34 +496,97 @@ export class Driving extends Scene
 
         this.actionBubble.setVisible(false);
 
-        //  A banner and a big DONE button, both pinned to the screen — sat
-        //  below the dashboard's own top icon row so neither one covers it
+        //  A banner, a ROAD/TUNNEL tool switch, and a big DONE button, all
+        //  pinned to the screen — sat below the dashboard's own top icon
+        //  row so neither one covers it
         const banner = this.add.rectangle(GAME_WIDTH / 2, 150, 560, 56, 0x102027, 0.85).setStrokeStyle(4, 0x9ccc65);
-        const text = this.add.text(GAME_WIDTH / 2, 150, 'Tap a square to build a road!', {
+
+        this.buildBanner = this.add.text(GAME_WIDTH / 2, 150, '', {
             fontFamily: 'Arial Black', fontSize: 26, color: '#c5e1a5'
         }).setOrigin(0.5);
 
         const doneBg = this.add.graphics();
         doneBg.fillStyle(0x43a047, 1);
-        doneBg.fillRoundedRect(GAME_WIDTH / 2 - 85, 195, 170, 60, 16);
+        doneBg.fillRoundedRect(GAME_WIDTH / 2 - 85, 285, 170, 60, 16);
         doneBg.lineStyle(5, 0x1b5e20, 1);
-        doneBg.strokeRoundedRect(GAME_WIDTH / 2 - 85, 195, 170, 60, 16);
+        doneBg.strokeRoundedRect(GAME_WIDTH / 2 - 85, 285, 170, 60, 16);
 
-        const doneText = this.add.text(GAME_WIDTH / 2, 225, 'DONE', {
+        const doneText = this.add.text(GAME_WIDTH / 2, 315, 'DONE', {
             fontFamily: 'Arial Black', fontSize: 30, color: '#ffffff'
         }).setOrigin(0.5);
 
         //  A container's own setScrollFactor(0) only fixes how it *renders* —
         //  Phaser's input hit-test reads each interactive object's own scroll
-        //  factor, not its parent's, so the zone needs this set directly or
+        //  factor, not its parent's, so every zone needs this set directly or
         //  its tappable area silently drifts away from the visible button
         //  the moment the camera (which follows the car) scrolls anywhere
-        const doneZone = this.add.zone(GAME_WIDTH / 2, 225, 180, 72).setInteractive();
+        const doneZone = this.add.zone(GAME_WIDTH / 2, 315, 180, 72).setInteractive();
         doneZone.setScrollFactor(0);
         doneZone.on('pointerdown', () => this.exitRoadMode());
 
-        this.roadModeLayer = this.add.container(0, 0, [ banner, text, doneBg, doneText, doneZone ]);
+        this.roadModeLayer = this.add.container(0, 0, [ banner, this.buildBanner, doneBg, doneText, doneZone ]);
         this.roadModeLayer.setScrollFactor(0).setDepth(210);
+
+        this.roadToolRoad = this.makeToolButton(GAME_WIDTH / 2 - 95, 210, 'ROAD', () => this.setBuildTool('road'));
+        this.roadToolTunnel = this.makeToolButton(GAME_WIDTH / 2 + 95, 210, 'TUNNEL', () => this.setBuildTool('tunnel'));
+        this.roadModeLayer.add([ this.roadToolRoad, this.roadToolTunnel ]);
+
+        this.refreshBuildUi();
+    }
+
+    //  A small pinned tool button — same scrollFactor gotcha as the DONE
+    //  button, so the zone gets it set directly rather than relying on the
+    //  parent container
+    makeToolButton (x: number, y: number, label: string, onTap: () => void): Phaser.GameObjects.Container
+    {
+        const bg = this.add.graphics();
+        bg.fillRoundedRect(-85, -28, 170, 56, 14);
+        bg.lineStyle(4, 0x1b5e20, 1);
+        bg.strokeRoundedRect(-85, -28, 170, 56, 14);
+
+        const text = this.add.text(0, 0, label, {
+            fontFamily: 'Arial Black', fontSize: 22, color: '#ffffff'
+        }).setOrigin(0.5);
+
+        const container = this.add.container(x, y, [ bg, text ]);
+        container.setData('bg', bg);
+
+        const zone = this.add.zone(0, 0, 170, 56).setInteractive();
+        zone.setScrollFactor(0);
+        zone.on('pointerdown', onTap);
+        container.add(zone);
+
+        return container;
+    }
+
+    setBuildTool (tool: 'road' | 'tunnel')
+    {
+        this.buildTool = tool;
+        this.refreshBuildUi();
+    }
+
+    //  Repaints the banner text and the selected/unselected look of the
+    //  tool buttons to match the current buildTool
+    refreshBuildUi ()
+    {
+        this.buildBanner?.setText(this.buildTool === 'tunnel' ? 'Tap a square to dig a tunnel!' : 'Tap a square to build a road!');
+
+        const paint = (container: Phaser.GameObjects.Container | null, selected: boolean) => {
+
+            const bg = container?.getData('bg') as Phaser.GameObjects.Graphics | undefined;
+
+            if (!bg) return;
+
+            bg.clear();
+            bg.fillStyle(selected ? 0x43a047 : 0x616161, 1);
+            bg.fillRoundedRect(-85, -28, 170, 56, 14);
+            bg.lineStyle(4, selected ? 0x1b5e20 : 0x212121, 1);
+            bg.strokeRoundedRect(-85, -28, 170, 56, 14);
+
+        };
+
+        paint(this.roadToolRoad, this.buildTool === 'road');
+        paint(this.roadToolTunnel, this.buildTool === 'tunnel');
     }
 
     exitRoadMode ()
@@ -529,11 +603,12 @@ export class Driving extends Scene
         });
     }
 
-    //  The map area starts below the banner/DONE button strip; the dashboard
-    //  sits below the camera viewport, so taps there never reach this scene
+    //  The map area starts below the banner/tool-switch/DONE strip; the
+    //  dashboard sits below the camera viewport, so taps there never reach
+    //  this scene
     onRoadTap (pointer: Phaser.Input.Pointer)
     {
-        if (!this.roadMode || this.transitioning || pointer.y < 270)
+        if (!this.roadMode || this.transitioning || pointer.y < 365)
         {
             return;
         }
@@ -541,6 +616,16 @@ export class Driving extends Scene
         const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
         const col = Math.floor(world.x / TILE);
         const row = Math.floor(world.y / TILE);
+
+        if (this.buildTool === 'tunnel')
+        {
+            if (this.canPlaceTunnel(col, row))
+            {
+                this.placeTunnel(col, row);
+            }
+
+            return;
+        }
 
         //  Tapping an existing crossroads cycles its look between a plain
         //  junction, a bridge and a tunnel
@@ -616,6 +701,53 @@ export class Driving extends Scene
                 }
             });
         }
+    }
+
+    //  A tunnel ignores whatever terrain is there (that's the whole point —
+    //  it can go under trees, water, sand) but still can't cut through an
+    //  authored building/site/yard/landmark, and still only ever grows out
+    //  from a tile that's already road *or* tunnel — which is what lets an
+    //  entrance start from ordinary road, and a dig resume from wherever it
+    //  was left off last time, with no separate "in progress" state to track
+    canPlaceTunnel (col: number, row: number): boolean
+    {
+        const rows = this.map.tiles.length;
+        const cols = this.map.tiles[0].length;
+
+        if (row < 0 || row >= rows || col < 0 || col >= cols)
+        {
+            return false;
+        }
+
+        if (this.extraRoads.has(`${col},${row}`) || this.blockedTiles.has(`${col},${row}`))
+        {
+            return false;
+        }
+
+        return this.isRoadTile(col - 1, row) || this.isRoadTile(col + 1, row)
+            || this.isRoadTile(col, row - 1) || this.isRoadTile(col, row + 1);
+    }
+
+    placeTunnel (col: number, row: number)
+    {
+        const mapId = this.registry.get('mapId') as string;
+
+        this.extraRoads.add(`${col},${row}`);
+        this.tunnelTiles.add(`${col},${row}`);
+        saveExtraRoad(mapId, { col, row, tunnel: true });
+
+        const coins = ((this.registry.get('coins') as number) ?? 0) + 1;
+        this.registry.set('coins', coins);
+        saveCoins(coins);
+
+        playSplash();
+
+        //  Instant "freshly dug" feedback (the real hidden-underground look,
+        //  or the entrance/exit mouth, comes on the rebuild)
+        const x = (col + 0.5) * TILE;
+        const y = (row + 0.5) * TILE;
+        const tile = this.add.rectangle(x, y, TILE, TILE, 0x6d4c41).setDepth(1).setScale(0);
+        this.tweens.add({ targets: tile, scaleX: 1, scaleY: 1, duration: 140, ease: 'Back.Out' });
     }
 
     isFourWayCrossing (col: number, row: number): boolean

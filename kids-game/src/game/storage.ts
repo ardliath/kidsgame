@@ -594,6 +594,11 @@ export interface ExtraRoadTile
     col: number;
     row: number;
     crossing?: 'ns-over' | 'ew-over';
+
+    //  Dug as a tunnel — ignores whatever terrain (tree/water/sand) was
+    //  there and, unless it's an entrance/exit tile touching plain surface
+    //  road, renders as if nothing were built there at all
+    tunnel?: boolean;
 }
 
 export function loadExtraRoads (): Record<string, ExtraRoadTile[]>

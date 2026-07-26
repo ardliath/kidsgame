@@ -230,6 +230,11 @@ export interface BuiltMap
     //  consults, exposed so traffic routing can see player-built road too
     //  instead of only ever reading the static tile grid
     extraRoads: Set<string>;
+
+    //  Which of those paved tiles are tunnels (a subset of extraRoads) —
+    //  dug regardless of the terrain that was there, hidden from view
+    //  unless they're where the tunnel meets ordinary surface road
+    tunnelTiles: Set<string>;
 }
 
 const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
@@ -313,6 +318,10 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  ever actually called, but declared here so the closure can see it
     const extraRoads = new Set<string>();
 
+    //  Which of those are tunnels — a subset of extraRoads (every tunnel
+    //  tile is also road for routing/connectivity purposes)
+    const tunnelTiles = new Set<string>();
+
     const tileAt = (c: number, r: number): string | null =>
         (c < 0 || r < 0 || c >= cols || r >= rows) ? null : (extraRoads.has(`${c},${r}`) ? 'R' : map.tiles[r][c]);
 
@@ -321,6 +330,15 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         const t = tileAt(c, r);
         return t === null ? true : t === 'R';
     };
+
+    //  Ordinary surface road — road, but not a tunnel tile. A tunnel tile
+    //  only shows as an entrance/exit where it touches one of these; deeper
+    //  in, it's hidden (see the main tile-drawing loop below). Off the map
+    //  never counts, even though isRoad() treats it as road for the edge-wall
+    //  gap logic — there's no real surface road at the boundary to surface
+    //  into, so a tunnel reaching the edge should still read as hidden.
+    const isPlainRoad = (c: number, r: number): boolean =>
+        c >= 0 && r >= 0 && c < cols && r < rows && isRoad(c, r) && !tunnelTiles.has(`${c},${r}`);
 
     //  Grass everywhere first
     scene.add.rectangle(width / 2, height / 2, width, height, 0x7cb342);
@@ -462,7 +480,15 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
             crossingByTile.set(`${tile.col},${tile.row}`, tile.crossing);
         }
 
-        if (map.tiles[tile.row]?.[tile.col] === '.')
+        //  A tunnel is dug regardless of what terrain was there, so (unlike
+        //  ordinary road) it doesn't need the static tile to still be plain
+        //  grass to count
+        if (tile.tunnel)
+        {
+            tunnelTiles.add(`${tile.col},${tile.row}`);
+            extraRoads.add(`${tile.col},${tile.row}`);
+        }
+        else if (map.tiles[tile.row]?.[tile.col] === '.')
         {
             extraRoads.add(`${tile.col},${tile.row}`);
         }
@@ -688,7 +714,38 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
             const cx = c * TILE + TILE / 2;
             const cy = r * TILE + TILE / 2;
 
-            if (t === 'R')
+            //  A tunnel tile only reveals itself where it meets ordinary
+            //  surface road (its entrance/exit) — everywhere else along its
+            //  length it's hidden, drawn as whatever terrain was really
+            //  there, with no collision, so the car can pass underneath
+            const isTunnelHere = tunnelTiles.has(`${c},${r}`);
+            const tunnelHidden = isTunnelHere
+                && !isPlainRoad(c - 1, r) && !isPlainRoad(c + 1, r) && !isPlainRoad(c, r - 1) && !isPlainRoad(c, r + 1);
+
+            if (t === 'R' && tunnelHidden)
+            {
+                const original = map.tiles[r][c];
+
+                if (original === 'T')
+                {
+                    scene.add.circle(cx, cy, 34, 0x2e7d32);
+                    scene.add.circle(cx, cy, 20, 0x43a047);
+                }
+                else if (original === 'S')
+                {
+                    scene.add.rectangle(cx, cy, TILE, TILE, 0xffe082);
+                }
+                else if (original === 'W')
+                {
+                    scene.add.rectangle(cx, cy, TILE, TILE, 0x29b6f6);
+                    scene.add.rectangle(cx - 40 + ((c * 13 + r * 7) % 80), cy - 30 + ((c * 31 + r * 17) % 60), 44, 6, 0x81d4fa);
+                }
+
+                //  A faint marker so the route is still findable, without
+                //  breaking the "hidden underground" look
+                scene.add.circle(cx, cy, 18, 0x333333, 0.4);
+            }
+            else if (t === 'R')
             {
                 scene.add.rectangle(cx, cy, TILE, TILE, 0x555555);
 
@@ -752,6 +809,13 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
                     //  The east-west deck, raised over the top
                     scene.add.rectangle(cx + 8, cy + 8, TILE, 74, 0x000000, 0.18);
                     scene.add.rectangle(cx, cy, TILE, 74, 0xa1887f).setStrokeStyle(4, 0x6d4c41);
+                }
+
+                //  A tunnel entrance/exit — the dark opening the road
+                //  disappears into, right where it meets the surface
+                if (isTunnelHere)
+                {
+                    scene.add.ellipse(cx, cy, TILE * 0.62, TILE * 0.42, 0x1a1a1a).setStrokeStyle(4, 0x000000);
                 }
             }
             else if (t === 'T')
@@ -1013,7 +1077,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         blockedTiles.delete(key);
     }
 
-    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, unlockMarkers, blockedTiles, extraRoads };
+    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, unlockMarkers, blockedTiles, extraRoads, tunnelTiles };
 }
 
 //  The builders' yard: a fenced gravel plot the fleet parks in. The player
