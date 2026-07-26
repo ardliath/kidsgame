@@ -575,7 +575,7 @@ export class Driving extends Scene
     refreshBuildUi ()
     {
         const label = this.buildTool === 'tunnel' ? 'Tap a square to dig a tunnel!'
-            : this.buildTool === 'demolish' ? 'Tap a house to knock it down!'
+            : this.buildTool === 'demolish' ? 'Tap a house or road to remove it!'
             : 'Tap a square to build a road!';
 
         this.buildBanner?.setText(label);
@@ -635,6 +635,10 @@ export class Driving extends Scene
             {
                 this.demolishHouse(house);
             }
+            else if (this.extraRoads.has(`${col},${row}`))
+            {
+                this.removeRoad(col, row);
+            }
 
             return;
         }
@@ -693,6 +697,32 @@ export class Driving extends Scene
         {
             this.tweens.add({ targets: rect, alpha: 0, scaleX: 0, scaleY: 0, duration: 220 });
         }
+    }
+
+    //  Only ever a tile the player actually paved themselves — the town's
+    //  own original roads aren't in extraRoads at all, so they're never a
+    //  valid target here
+    removeRoad (col: number, row: number)
+    {
+        const mapId = this.registry.get('mapId') as string;
+
+        this.extraRoads.delete(`${col},${row}`);
+        this.tunnelTiles.delete(`${col},${row}`);
+
+        const all = loadExtraRoads();
+        all[mapId] = (all[mapId] ?? []).filter(t => !(t.col === col && t.row === row));
+        saveExtraRoads(all);
+
+        playSplash();
+        this.showToast('Back to grass!');
+
+        //  Instant feedback: paint over whatever was drawn there (kerbs,
+        //  dashes, a tunnel mouth, the hidden-tunnel marker) with plain
+        //  grass; the rebuild redraws the tile's real neighbours properly
+        const x = (col + 0.5) * TILE;
+        const y = (row + 0.5) * TILE;
+        const tile = this.add.rectangle(x, y, TILE, TILE, 0x7cb342).setDepth(2).setAlpha(0);
+        this.tweens.add({ targets: tile, alpha: 1, duration: 180 });
     }
 
     canPlaceRoad (col: number, row: number): boolean
