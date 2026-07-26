@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
-import { loadBuiltHouses, loadDemolished, loadExtraExits, loadExtraRoads, loadExtraSites, loadPlayerName, loadUnlockedTowns, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites } from './storage';
+import { loadBuiltHouses, loadDemolished, loadExtraExits, loadExtraRoads, loadExtraSites, loadGeneratedMaps, loadPlayerName, loadUnlockedTowns, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites } from './storage';
 
 export const TILE = 200;
 
@@ -21,14 +21,36 @@ export function mapCacheKey (id: string): string
     return `map-${id}`;
 }
 
+//  Towns generated on the fly (see generateAdjacentMap) live only in
+//  storage until injected here — scene.cache.json.add makes an in-memory
+//  map indistinguishable from a normally file-loaded one to every consumer
+//  in the codebase, and this survives scene.restart() since the cache is
+//  Game-level, not scene state.
+function ensureGeneratedMapsLoaded (scene: Scene)
+{
+    const generated = loadGeneratedMaps();
+
+    for (const [ id, data ] of Object.entries(generated))
+    {
+        if (!scene.cache.json.has(mapCacheKey(id)))
+        {
+            scene.cache.json.add(mapCacheKey(id), data);
+        }
+    }
+}
+
 //  Every map currently in play: the fixed set plus whichever bonus towns
-//  have been unlocked, each with its exits overlaid by any a road has since
-//  earned. The one shared source Driving/MiniMap/DeliveryBoard all read
-//  instead of each keeping its own near-identical MAP_IDS loop.
+//  have been unlocked, plus any procedurally generated towns, each with its
+//  exits overlaid by any a road has since earned. The one shared source
+//  Driving/MiniMap/DeliveryBoard all read instead of each keeping its own
+//  near-identical MAP_IDS loop.
 export function loadActiveMaps (scene: Scene): Record<string, MapData>
 {
+    ensureGeneratedMapsLoaded(scene);
+
     const unlocked = new Set(loadUnlockedTowns());
-    const ids = [ ...MAP_IDS, ...EXTRA_TOWN_IDS.filter(id => unlocked.has(id)) ];
+    const generatedIds = Object.keys(loadGeneratedMaps());
+    const ids = [ ...MAP_IDS, ...EXTRA_TOWN_IDS.filter(id => unlocked.has(id)), ...generatedIds ];
     const extraExits = loadExtraExits();
 
     const maps: Record<string, MapData> = {};
@@ -314,6 +336,168 @@ export function parseColour (name: string | undefined, fallback: number): number
     }
 
     return NAMED_COLOURS[name.toLowerCase()] ?? fallback;
+}
+
+const GRID_SIZE = 12;
+
+//  Which edge (if any) a map's coastline sits on — checked by looking for a
+//  boundary row/column that's entirely sand/water, matching how every
+//  hand-authored coastal town (beach-town, cove-town) is drawn.
+export function getCoastEdge (map: MapData): Edge | null
+{
+    const rows = map.tiles.length;
+    const cols = map.tiles[0].length;
+
+    const isCoastRow = (r: number) => map.tiles[r].split('').every(t => t === 'S' || t === 'W');
+    const isCoastCol = (c: number) => map.tiles.every(row => (row[c] === 'S' || row[c] === 'W'));
+
+    if (isCoastRow(rows - 1)) return 'south';
+    if (isCoastRow(0)) return 'north';
+    if (isCoastCol(cols - 1)) return 'east';
+    if (isCoastCol(0)) return 'west';
+
+    return null;
+}
+
+//  Whether growing out of `parentMap` in `edge` direction continues the
+//  parent's own coastline (rather than heading inland from it) — a
+//  coastline running along a north/south edge is continued by growing
+//  east/west, and vice versa. See beach-town/cove-town, already joined
+//  this exact way along their shared south coast.
+function isParallelToCoast (coastEdge: Edge, edge: Edge): boolean
+{
+    const coastRunsEastWest = coastEdge === 'north' || coastEdge === 'south';
+    const growsEastWest = edge === 'east' || edge === 'west';
+
+    return coastRunsEastWest === growsEastWest;
+}
+
+const INLAND_WORDS = [ 'Meadow', 'Pine', 'Maple', 'Oak', 'Stone', 'Fern', 'Elm', 'Briar' ];
+const INLAND_SUFFIXES = [ 'Hollow', 'Grove', 'Ridge', 'Vale', 'Fields', 'Wood' ];
+const COASTAL_WORDS = [ 'Sandy', 'Tide', 'Shell', 'Gull', 'Coral', 'Salt' ];
+const COASTAL_SUFFIXES = [ 'Cove', 'Bay', 'Shore', 'Point', 'Harbour' ];
+
+function generateName (coastal: boolean): string
+{
+    const words = coastal ? COASTAL_WORDS : INLAND_WORDS;
+    const suffixes = coastal ? COASTAL_SUFFIXES : INLAND_SUFFIXES;
+
+    const word = words[Math.floor(Math.random() * words.length)];
+    const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+
+    return `${word} ${suffix}`;
+}
+
+//  A brand-new town, generated the moment a road/tunnel reaches an edge
+//  that doesn't lead anywhere yet. `edge` is the direction it was reached
+//  from (relative to the parent); `crossAt` is the row (for an east/west
+//  edge) or column (for a north/south edge) the road crossed at, carried
+//  over unchanged since exitMap() only ever snaps the other axis to the
+//  boundary. Blank land plus an entry stub — no objects/cars/roadStubs —
+//  the existing MIN_SITES auto-fill in buildMap() takes care of the rest.
+export function generateAdjacentMap (parentMap: MapData, edge: Edge, crossAt: number): { id: string; data: MapData }
+{
+    const id = `${parentMap.id}-${edge}`;
+    const entryEdge = OPPOSITE_EDGE[edge];
+
+    const tiles: string[][] = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill('.'));
+
+    const coastEdge = getCoastEdge(parentMap);
+    const coastal = !!coastEdge && isParallelToCoast(coastEdge, edge);
+
+    if (coastal && coastEdge)
+    {
+        //  Copy the parent's own coast rows/columns verbatim onto the same
+        //  edge of the child, so the shoreline continues unbroken
+        if (coastEdge === 'south' || coastEdge === 'north')
+        {
+            const rows = parentMap.tiles.length;
+            const isCoastRow = (r: number) => parentMap.tiles[r].split('').every(t => t === 'S' || t === 'W');
+
+            if (coastEdge === 'south')
+            {
+                for (let r = rows - 1; r >= 0 && isCoastRow(r); r--)
+                {
+                    tiles[r] = parentMap.tiles[r].split('');
+                }
+            }
+            else
+            {
+                for (let r = 0; r < rows && isCoastRow(r); r++)
+                {
+                    tiles[r] = parentMap.tiles[r].split('');
+                }
+            }
+        }
+        else
+        {
+            const cols = parentMap.tiles[0].length;
+            const isCoastCol = (c: number) => parentMap.tiles.every(row => (row[c] === 'S' || row[c] === 'W'));
+
+            if (coastEdge === 'east')
+            {
+                for (let c = cols - 1; c >= 0 && isCoastCol(c); c--)
+                {
+                    for (let r = 0; r < tiles.length; r++) tiles[r][c] = parentMap.tiles[r][c];
+                }
+            }
+            else
+            {
+                for (let c = 0; c < cols && isCoastCol(c); c++)
+                {
+                    for (let r = 0; r < tiles.length; r++) tiles[r][c] = parentMap.tiles[r][c];
+                }
+            }
+        }
+    }
+    else
+    {
+        //  Scatter a handful of trees on otherwise-empty grass
+        const treeCount = 4 + Math.floor(Math.random() * 3);
+        let placed = 0;
+        let guard = 0;
+
+        while (placed < treeCount && guard++ < 100)
+        {
+            const c = Math.floor(Math.random() * GRID_SIZE);
+            const r = Math.floor(Math.random() * GRID_SIZE);
+
+            if (tiles[r][c] === '.')
+            {
+                tiles[r][c] = 'T';
+                placed++;
+            }
+        }
+    }
+
+    //  Carve the entry stub last, so it's never overwritten by a stray tree
+    //  or a copied coast tile — three tiles inward from the boundary at the
+    //  fixed cross-coordinate carried over from the crossing.
+    const [ idx, idy ] = EDGE_DELTA[OPPOSITE_EDGE[entryEdge]];
+    let ec = entryEdge === 'west' ? 0 : entryEdge === 'east' ? GRID_SIZE - 1 : crossAt;
+    let er = entryEdge === 'north' ? 0 : entryEdge === 'south' ? GRID_SIZE - 1 : crossAt;
+
+    let startCol = ec;
+    let startRow = er;
+
+    for (let i = 0; i < 3; i++)
+    {
+        tiles[er][ec] = 'R';
+        startCol = ec;
+        startRow = er;
+        ec += idx;
+        er += idy;
+    }
+
+    const data: MapData = {
+        id,
+        name: generateName(coastal),
+        tiles: tiles.map(row => row.join('')),
+        exits: { [entryEdge]: parentMap.id },
+        start: { col: startCol, row: startRow }
+    };
+
+    return { id, data };
 }
 
 export function buildMap (scene: Scene, map: MapData): BuiltMap

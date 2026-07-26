@@ -164,7 +164,14 @@ export function drawTownGrid (scene: Scene, map: MapData, cell: { x: number; y: 
     return markers;
 }
 
-//  Road bridges between neighbouring towns, drawn once per connected pair
+//  Road bridges between neighbouring towns, drawn once per connected pair.
+//  Each map only ever needs to check its own near side against its own
+//  static tiles — for the 4 hand-authored towns both sides of a junction
+//  bake a real 'R' by design, so east/south and west/north each draw the
+//  same strip a harmless second time; for a procedurally generated child
+//  (see mapBuilder's generateAdjacentMap), exactly one side ever bakes a
+//  real tile, so it draws exactly once regardless of which direction it
+//  was reached from.
 export function drawConnectors (scene: Scene, maps: Record<string, MapData>, cellOf: (id: string) => { x: number; y: number })
 {
     for (const id of Object.keys(maps))
@@ -174,7 +181,6 @@ export function drawConnectors (scene: Scene, maps: Record<string, MapData>, cel
         const rows = map.tiles.length;
         const cell = cellOf(id);
 
-        //  Only draw east and south so each bridge is drawn once
         if (map.exits?.east)
         {
             for (let r = 0; r < rows; r++)
@@ -195,6 +201,30 @@ export function drawConnectors (scene: Scene, maps: Record<string, MapData>, cel
                 {
                     const x = cell.x + c * TILE_PX + TILE_PX / 2;
                     scene.add.rectangle(x, cell.y + rows * TILE_PX + GAP / 2, TILE_PX, GAP + 4, 0x6d6d6d);
+                }
+            }
+        }
+
+        if (map.exits?.west)
+        {
+            for (let r = 0; r < rows; r++)
+            {
+                if (map.tiles[r][0] === 'R')
+                {
+                    const y = cell.y + r * TILE_PX + TILE_PX / 2;
+                    scene.add.rectangle(cell.x - GAP / 2, y, GAP + 4, TILE_PX, 0x6d6d6d);
+                }
+            }
+        }
+
+        if (map.exits?.north)
+        {
+            for (let c = 0; c < cols; c++)
+            {
+                if (map.tiles[0][c] === 'R')
+                {
+                    const x = cell.x + c * TILE_PX + TILE_PX / 2;
+                    scene.add.rectangle(x, cell.y - GAP / 2, TILE_PX, GAP + 4, 0x6d6d6d);
                 }
             }
         }

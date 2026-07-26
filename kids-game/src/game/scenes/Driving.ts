@@ -3,10 +3,10 @@ import { Scene } from 'phaser';
 import { buildCarShapes, CAR_MODELS, DEFAULT_COLOUR } from '../carShapes';
 import { GAME_WIDTH, VIEW_HEIGHT } from '../layout';
 import { DeliveriesConfig, DeliveryJob, generateJob } from '../deliveries';
-import { buildMap, DEFAULT_MAP, Edge, loadActiveMaps, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedUnlockMarker, PlacedYard, TILE } from '../mapBuilder';
+import { buildMap, DEFAULT_MAP, Edge, generateAdjacentMap, loadActiveMaps, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedUnlockMarker, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch, playSplash } from '../sfx';
-import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDemolished, loadDirt, loadExtraRoads, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDemolished, saveDirt, saveExtraExit, saveExtraRoad, saveExtraRoads, saveFleet, saveFuel, saveNavTarget, savePantry, saveUnlockedTown, SaveData } from '../storage';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDemolished, loadDirt, loadExtraRoads, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDemolished, saveDirt, saveExtraExit, saveExtraRoad, saveExtraRoads, saveFleet, saveFuel, saveGeneratedMap, saveNavTarget, savePantry, saveUnlockedTown, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -784,6 +784,10 @@ export class Driving extends Scene
                 }
             });
         }
+        else
+        {
+            this.maybeGrowWorld(col, row);
+        }
     }
 
     //  A tunnel ignores whatever terrain is there (that's the whole point —
@@ -831,6 +835,87 @@ export class Driving extends Scene
         const y = (row + 0.5) * TILE;
         const tile = this.add.rectangle(x, y, TILE, TILE, 0x6d4c41).setDepth(1).setScale(0);
         this.tweens.add({ targets: tile, scaleX: 1, scaleY: 1, duration: 140, ease: 'Back.Out' });
+
+        const marker = this.unlockMarkers.find(m => m.col === col && m.row === row);
+
+        if (marker)
+        {
+            saveExtraExit(mapId, marker.edge, marker.unlocksMap);
+            saveUnlockedTown(marker.unlocksMap);
+
+            const targetData = this.cache.json.get(mapCacheKey(marker.unlocksMap)) as MapData | undefined;
+            this.showToast(`You reached ${targetData?.name ?? 'a new town'}!`);
+
+            //  Leave build mode after a beat so the rebuild brings the town in
+            this.time.delayedCall(1100, () => {
+                if (this.roadMode)
+                {
+                    this.exitRoadMode();
+                }
+            });
+        }
+        else
+        {
+            this.maybeGrowWorld(col, row);
+        }
+    }
+
+    //  Which map boundary a tile sits on, if any — row 0/last row/col 0/last
+    //  col. Used to trigger procedural growth when a road/tunnel reaches an
+    //  edge that doesn't lead anywhere yet.
+    boundaryEdgeOf (col: number, row: number): Edge | null
+    {
+        const rows = this.map.tiles.length;
+        const cols = this.map.tiles[0].length;
+
+        if (row === 0) return 'north';
+        if (row === rows - 1) return 'south';
+        if (col === 0) return 'west';
+        if (col === cols - 1) return 'east';
+
+        return null;
+    }
+
+    //  Called only from the `else` of the unlock-marker check in placeRoad/
+    //  placeTunnel, never on its own — otherwise it would race the moment a
+    //  hand-authored unlock stub's edge tile is paved (its town is the
+    //  "real" destination for that direction, not a generated one). If the
+    //  freshly-paved tile is on the map boundary and that edge doesn't
+    //  already lead anywhere, generate a brand new town there.
+    maybeGrowWorld (col: number, row: number)
+    {
+        const edge = this.boundaryEdgeOf(col, row);
+
+        if (!edge)
+        {
+            return;
+        }
+
+        const mapId = this.registry.get('mapId') as string;
+
+        if (this.allMaps[mapId]?.exits?.[edge])
+        {
+            return; //  Already leads somewhere
+        }
+
+        const crossAt = (edge === 'east' || edge === 'west') ? row : col;
+        const { id, data } = generateAdjacentMap(this.map, edge, crossAt);
+
+        saveGeneratedMap(id, data);
+        this.cache.json.add(mapCacheKey(id), data);
+        saveExtraExit(mapId, edge, id);
+
+        this.allMaps[mapId] = { ...this.allMaps[mapId], exits: { ...this.allMaps[mapId]?.exits, [edge]: id } };
+        this.allMaps[id] = data;
+
+        this.showToast(`You reached ${data.name}!`);
+
+        this.time.delayedCall(1100, () => {
+            if (this.roadMode)
+            {
+                this.exitRoadMode();
+            }
+        });
     }
 
     isFourWayCrossing (col: number, row: number): boolean

@@ -1,6 +1,6 @@
 import { CAR_MODELS, DEFAULT_MODEL } from './carShapes';
 import { DeliveryJob } from './deliveries';
-import type { Edge } from './mapBuilder';
+import type { Edge, MapData } from './mapBuilder';
 
 const SAVE_KEY = 'kids-game-save';
 const CAR_KEY = 'kids-game-car';
@@ -24,6 +24,7 @@ const EXTRA_ROADS_KEY = 'kids-game-extra-roads';
 const EXTRA_STUBS_KEY = 'kids-game-extra-stubs';
 const UNLOCKED_TOWNS_KEY = 'kids-game-unlocked-towns';
 const EXTRA_EXITS_KEY = 'kids-game-extra-exits';
+const GENERATED_MAPS_KEY = 'kids-game-generated-maps';
 
 export interface SaveData
 {
@@ -763,6 +764,35 @@ export function saveExtraExit (mapId: string, edge: Edge, targetId: string)
     catch
     {
         //  Ignore
+    }
+}
+
+//  Towns generated on the fly when a road/tunnel reaches an edge that
+//  doesn't lead anywhere yet — full map data (there's no authored JSON to
+//  diff against), keyed by the generated map's own id
+export function loadGeneratedMaps (): Record<string, MapData>
+{
+    try
+    {
+        return JSON.parse(localStorage.getItem(GENERATED_MAPS_KEY) ?? '{}') as Record<string, MapData>;
+    }
+    catch
+    {
+        return {};
+    }
+}
+
+export function saveGeneratedMap (id: string, data: MapData)
+{
+    try
+    {
+        const all = loadGeneratedMaps();
+        all[id] = data;
+        localStorage.setItem(GENERATED_MAPS_KEY, JSON.stringify(all));
+    }
+    catch
+    {
+        //  Ignore: worst case the town has to be regenerated next session
     }
 }
 
