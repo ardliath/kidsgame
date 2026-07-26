@@ -6,7 +6,7 @@ import { DeliveriesConfig, DeliveryJob, generateJob } from '../deliveries';
 import { buildMap, DEFAULT_MAP, Edge, loadActiveMaps, MapData, mapCacheKey, PlacedHouse, PlacedLandmark, PlacedNpcCar, PlacedSite, PlacedUnlockMarker, PlacedYard, TILE } from '../mapBuilder';
 import { bearingTo, edgeAngle, findNextHop } from '../navigation';
 import { initSfx, playBrake, playCrunch, playSplash } from '../sfx';
-import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDirt, loadExtraRoads, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDirt, saveExtraExit, saveExtraRoad, saveExtraRoads, saveFleet, saveFuel, saveNavTarget, savePantry, saveUnlockedTown, SaveData } from '../storage';
+import { loadCarStyle, loadCoins, loadCurrentMap, loadDelivery, loadDemolished, loadDirt, loadExtraRoads, loadFleet, loadFuel, loadNavTarget, NavTarget, pantryExists, saveCoins, saveCurrentMap, saveDelivery, saveDemolished, saveDirt, saveExtraExit, saveExtraRoad, saveExtraRoads, saveFleet, saveFuel, saveNavTarget, savePantry, saveUnlockedTown, SaveData } from '../storage';
 import { Dashboard } from './Dashboard';
 
 //  Speed at which steering reaches full grip, and the fastest the car can
@@ -114,11 +114,12 @@ export class Driving extends Scene
 
     //  Road-build mode: tap empty squares next to a road to pave them
     roadMode = false;
-    buildTool: 'road' | 'tunnel' = 'road';
+    buildTool: 'road' | 'tunnel' | 'demolish' = 'road';
     roadModeLayer: Phaser.GameObjects.Container | null = null;
     buildBanner: Phaser.GameObjects.Text | null = null;
     roadToolRoad: Phaser.GameObjects.Container | null = null;
     roadToolTunnel: Phaser.GameObjects.Container | null = null;
+    roadToolDemolish: Phaser.GameObjects.Container | null = null;
     crossingOverlays: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
 
     //  Fleet vehicles left parked out in this town, offered as SWAP targets
@@ -261,6 +262,7 @@ export class Driving extends Scene
         this.buildBanner = null;
         this.roadToolRoad = null;
         this.roadToolTunnel = null;
+        this.roadToolDemolish = null;
         this.crossingOverlays.clear();
         this.bubbleTarget = null;
 
@@ -529,9 +531,10 @@ export class Driving extends Scene
         this.roadModeLayer = this.add.container(0, 0, [ banner, this.buildBanner, doneBg, doneText, doneZone ]);
         this.roadModeLayer.setScrollFactor(0).setDepth(210);
 
-        this.roadToolRoad = this.makeToolButton(GAME_WIDTH / 2 - 95, 210, 'ROAD', () => this.setBuildTool('road'));
-        this.roadToolTunnel = this.makeToolButton(GAME_WIDTH / 2 + 95, 210, 'TUNNEL', () => this.setBuildTool('tunnel'));
-        this.roadModeLayer.add([ this.roadToolRoad, this.roadToolTunnel ]);
+        this.roadToolRoad = this.makeToolButton(GAME_WIDTH / 2 - 160, 210, 'ROAD', () => this.setBuildTool('road'));
+        this.roadToolTunnel = this.makeToolButton(GAME_WIDTH / 2, 210, 'TUNNEL', () => this.setBuildTool('tunnel'));
+        this.roadToolDemolish = this.makeToolButton(GAME_WIDTH / 2 + 160, 210, 'DEMOLISH', () => this.setBuildTool('demolish'));
+        this.roadModeLayer.add([ this.roadToolRoad, this.roadToolTunnel, this.roadToolDemolish ]);
 
         this.refreshBuildUi();
     }
@@ -542,18 +545,18 @@ export class Driving extends Scene
     makeToolButton (x: number, y: number, label: string, onTap: () => void): Phaser.GameObjects.Container
     {
         const bg = this.add.graphics();
-        bg.fillRoundedRect(-85, -28, 170, 56, 14);
+        bg.fillRoundedRect(-75, -28, 150, 56, 14);
         bg.lineStyle(4, 0x1b5e20, 1);
-        bg.strokeRoundedRect(-85, -28, 170, 56, 14);
+        bg.strokeRoundedRect(-75, -28, 150, 56, 14);
 
         const text = this.add.text(0, 0, label, {
-            fontFamily: 'Arial Black', fontSize: 22, color: '#ffffff'
+            fontFamily: 'Arial Black', fontSize: 19, color: '#ffffff'
         }).setOrigin(0.5);
 
         const container = this.add.container(x, y, [ bg, text ]);
         container.setData('bg', bg);
 
-        const zone = this.add.zone(0, 0, 170, 56).setInteractive();
+        const zone = this.add.zone(0, 0, 150, 56).setInteractive();
         zone.setScrollFactor(0);
         zone.on('pointerdown', onTap);
         container.add(zone);
@@ -561,7 +564,7 @@ export class Driving extends Scene
         return container;
     }
 
-    setBuildTool (tool: 'road' | 'tunnel')
+    setBuildTool (tool: 'road' | 'tunnel' | 'demolish')
     {
         this.buildTool = tool;
         this.refreshBuildUi();
@@ -571,7 +574,11 @@ export class Driving extends Scene
     //  tool buttons to match the current buildTool
     refreshBuildUi ()
     {
-        this.buildBanner?.setText(this.buildTool === 'tunnel' ? 'Tap a square to dig a tunnel!' : 'Tap a square to build a road!');
+        const label = this.buildTool === 'tunnel' ? 'Tap a square to dig a tunnel!'
+            : this.buildTool === 'demolish' ? 'Tap a house to knock it down!'
+            : 'Tap a square to build a road!';
+
+        this.buildBanner?.setText(label);
 
         const paint = (container: Phaser.GameObjects.Container | null, selected: boolean) => {
 
@@ -581,14 +588,15 @@ export class Driving extends Scene
 
             bg.clear();
             bg.fillStyle(selected ? 0x43a047 : 0x616161, 1);
-            bg.fillRoundedRect(-85, -28, 170, 56, 14);
+            bg.fillRoundedRect(-75, -28, 150, 56, 14);
             bg.lineStyle(4, selected ? 0x1b5e20 : 0x212121, 1);
-            bg.strokeRoundedRect(-85, -28, 170, 56, 14);
+            bg.strokeRoundedRect(-75, -28, 150, 56, 14);
 
         };
 
         paint(this.roadToolRoad, this.buildTool === 'road');
         paint(this.roadToolTunnel, this.buildTool === 'tunnel');
+        paint(this.roadToolDemolish, this.buildTool === 'demolish');
     }
 
     exitRoadMode ()
@@ -619,6 +627,18 @@ export class Driving extends Scene
         const col = Math.floor(world.x / TILE);
         const row = Math.floor(world.y / TILE);
 
+        if (this.buildTool === 'demolish')
+        {
+            const house = this.findHouseAt(world.x, world.y);
+
+            if (house)
+            {
+                this.demolishHouse(house);
+            }
+
+            return;
+        }
+
         if (this.buildTool === 'tunnel')
         {
             if (this.canPlaceTunnel(col, row))
@@ -641,6 +661,37 @@ export class Driving extends Scene
         if (this.canPlaceRoad(col, row))
         {
             this.placeRoad(col, row);
+        }
+    }
+
+    //  Which house (if any) sits under this world point — his own home is
+    //  never a valid target, so the demolish tool can't touch it
+    findHouseAt (x: number, y: number): PlacedHouse | undefined
+    {
+        return this.houses.find(h => !h.player
+            && x >= h.x - h.width / 2 && x <= h.x + h.width / 2
+            && y >= h.y - h.height / 2 && y <= h.y + h.height / 2);
+    }
+
+    demolishHouse (house: PlacedHouse)
+    {
+        const demolished = new Set(loadDemolished());
+        demolished.add(house.id);
+        saveDemolished([ ...demolished ]);
+
+        this.houses = this.houses.filter(h => h.id !== house.id);
+
+        playSplash();
+        this.showToast('Knocked down!');
+
+        //  Instant feedback: fade the house's own rectangle out now (proper
+        //  building-site dirt/stakes come on the rebuild). Other bits of it
+        //  — a sign, a roof ridge, a door — are left in place until then.
+        const rect = this.children.list.find(o => o.name === house.id) as Phaser.GameObjects.Rectangle | undefined;
+
+        if (rect)
+        {
+            this.tweens.add({ targets: rect, alpha: 0, scaleX: 0, scaleY: 0, duration: 220 });
         }
     }
 

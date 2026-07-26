@@ -146,6 +146,9 @@ export interface PlacedHouse
     sign?: string;
     sells?: string[];
     shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy';
+
+    //  His own home — never a target for the demolish tool
+    player?: boolean;
 }
 
 //  A construction site that hasn't been built on yet
@@ -713,7 +716,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
         solid(rect);
 
-        houses.push({ id, x: hx, y: hy, width: hw, height: hh, colour, sign, sells, shopType });
+        houses.push({ id, x: hx, y: hy, width: hw, height: hh, colour, sign, sells, shopType, player });
     };
 
     for (let r = 0; r < rows; r++)
