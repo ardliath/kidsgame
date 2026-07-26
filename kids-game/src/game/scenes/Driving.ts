@@ -106,6 +106,7 @@ export class Driving extends Scene
     landmarks: PlacedLandmark[] = [];
     extraRoads: Set<string> = new Set();
     tunnelTiles: Set<string> = new Set();
+    hiddenTunnelTiles: Set<string> = new Set();
     unlockMarkers: PlacedUnlockMarker[] = [];
     blockedTiles: Set<string> = new Set();
     npcCars: NpcCarState[] = [];
@@ -251,6 +252,7 @@ export class Driving extends Scene
         this.landmarks = built.landmarks;
         this.extraRoads = built.extraRoads;
         this.tunnelTiles = built.tunnelTiles;
+        this.hiddenTunnelTiles = built.hiddenTunnelTiles;
         this.unlockMarkers = built.unlockMarkers;
         this.blockedTiles = built.blockedTiles;
         this.roadMode = false;
@@ -1409,6 +1411,16 @@ export class Driving extends Scene
         npc.stuckTime = 0;
     }
 
+    //  Whether the given world position sits on a tunnel tile that's
+    //  genuinely hidden underground (as opposed to a visible entrance/exit)
+    isHiddenTunnelAt (x: number, y: number): boolean
+    {
+        const col = Math.floor(x / TILE);
+        const row = Math.floor(y / TILE);
+
+        return this.hiddenTunnelTiles.has(`${col},${row}`);
+    }
+
     updateNpcCars (dt: number)
     {
         for (const npc of this.npcCars)
@@ -1417,6 +1429,7 @@ export class Driving extends Scene
 
             body.setVelocity(Math.sin(npc.heading) * NPC_SPEED, -Math.cos(npc.heading) * NPC_SPEED);
             npc.container.rotation = npc.heading;
+            npc.container.setVisible(!this.isHiddenTunnelAt(npc.container.x, npc.container.y));
 
             const distance = Phaser.Math.Distance.Between(npc.container.x, npc.container.y, npc.targetX, npc.targetY);
 
@@ -1574,6 +1587,10 @@ export class Driving extends Scene
         body.setVelocity(Math.sin(this.heading) * this.speed, -Math.cos(this.heading) * this.speed);
 
         this.car.rotation = this.heading;
+
+        //  Hidden while genuinely underground, rather than visibly driving
+        //  across whatever terrain the tunnel runs beneath
+        this.car.setVisible(!this.isHiddenTunnelAt(this.car.x, this.car.y));
 
         //  The dashboard speedo reads this
         const speedAbs = Math.abs(this.speed);

@@ -235,6 +235,12 @@ export interface BuiltMap
     //  dug regardless of the terrain that was there, hidden from view
     //  unless they're where the tunnel meets ordinary surface road
     tunnelTiles: Set<string>;
+
+    //  Which tunnel tiles are actually hidden underground (as opposed to an
+    //  entrance/exit, which still shows as real road) — so Driving.ts can
+    //  hide a car while it's genuinely "underground" instead of leaving it
+    //  visibly driving across whatever terrain the tunnel runs beneath
+    hiddenTunnelTiles: Set<string>;
 }
 
 const HOUSE_COLOURS = [0xef9a9a, 0x90caf9, 0xffcc80, 0xa5d6a7, 0xce93d8, 0xfff59d, 0x80cbc4, 0xffab91];
@@ -321,6 +327,10 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  Which of those are tunnels — a subset of extraRoads (every tunnel
     //  tile is also road for routing/connectivity purposes)
     const tunnelTiles = new Set<string>();
+
+    //  Which tunnel tiles are actually hidden underground — populated
+    //  alongside the tile-drawing loop below, where that's worked out
+    const hiddenTunnelTiles = new Set<string>();
 
     const tileAt = (c: number, r: number): string | null =>
         (c < 0 || r < 0 || c >= cols || r >= rows) ? null : (extraRoads.has(`${c},${r}`) ? 'R' : map.tiles[r][c]);
@@ -722,6 +732,11 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
             const tunnelHidden = isTunnelHere
                 && !isPlainRoad(c - 1, r) && !isPlainRoad(c + 1, r) && !isPlainRoad(c, r - 1) && !isPlainRoad(c, r + 1);
 
+            if (tunnelHidden)
+            {
+                hiddenTunnelTiles.add(`${c},${r}`);
+            }
+
             if (t === 'R' && tunnelHidden)
             {
                 const original = map.tiles[r][c];
@@ -1077,7 +1092,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         blockedTiles.delete(key);
     }
 
-    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, unlockMarkers, blockedTiles, extraRoads, tunnelTiles };
+    return { obstacles, width, height, start, houses, sites, npcCars, yard, landmarks, unlockMarkers, blockedTiles, extraRoads, tunnelTiles, hiddenTunnelTiles };
 }
 
 //  The builders' yard: a fenced gravel plot the fleet parks in. The player
