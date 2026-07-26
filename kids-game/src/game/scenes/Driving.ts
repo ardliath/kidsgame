@@ -613,12 +613,30 @@ export class Driving extends Scene
         });
     }
 
-    //  The map area starts below the banner/tool-switch/DONE strip; the
-    //  dashboard sits below the camera viewport, so taps there never reach
-    //  this scene
+    //  Whether a tap landed on the pinned banner/tool-row/DONE strip rather
+    //  than the map underneath it. These are all setScrollFactor(0), so
+    //  their screen footprint is exactly their own (x,y,width,height) in
+    //  pointer space regardless of camera scroll — checked directly here
+    //  instead of a blanket "top of the screen" cutoff, which used to also
+    //  reject taps on ordinary map tiles that happened to render in that
+    //  same band (e.g. whenever the camera settled near a map edge)
+    isOnBuildUi (pointer: Phaser.Input.Pointer): boolean
+    {
+        const cx = GAME_WIDTH / 2;
+
+        const inRect = (x: number, y: number, w: number, h: number) =>
+            pointer.x >= x - w / 2 && pointer.x <= x + w / 2 && pointer.y >= y - h / 2 && pointer.y <= y + h / 2;
+
+        return inRect(cx, 150, 560, 56)   // banner
+            || inRect(cx, 210, 470, 56)   // ROAD/TUNNEL/DEMOLISH row
+            || inRect(cx, 315, 180, 72);  // DONE
+    }
+
+    //  The dashboard sits below the camera viewport, so taps there never
+    //  reach this scene at all
     onRoadTap (pointer: Phaser.Input.Pointer)
     {
-        if (!this.roadMode || this.transitioning || pointer.y < 365)
+        if (!this.roadMode || this.transitioning || this.isOnBuildUi(pointer))
         {
             return;
         }
