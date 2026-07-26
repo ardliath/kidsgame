@@ -1,5 +1,12 @@
 import { Scene } from 'phaser';
 import { DEFAULT_MAP, Edge, MapData, MapObject, scanGridHouses } from './mapBuilder';
+import { loadExtraRoads } from './storage';
+
+//  Tiles the player has paved onto this map since it was authored — same
+//  "col,row" key shape as mapBuilder's own extraRoads set, consulted fresh
+//  each draw rather than ever mutating the static tile grid
+const extraRoadTiles = (mapId: string): Set<string> =>
+    new Set((loadExtraRoads()[mapId] ?? []).map(t => `${t.col},${t.row}`));
 
 //  Shared by MiniMap.ts and DeliveryBoard.ts — both show the same little
 //  town-grid view of the world, just with different things tappable on top
@@ -89,13 +96,14 @@ export function drawTownGrid (scene: Scene, map: MapData, cell: { x: number; y: 
     const cols = map.tiles[0].length;
     const rows = map.tiles.length;
     const markers: TownMarker[] = [];
+    const extraRoads = extraRoadTiles(map.id);
 
     //  Terrain
     for (let r = 0; r < rows; r++)
     {
         for (let c = 0; c < cols; c++)
         {
-            const t = map.tiles[r][c];
+            const t = extraRoads.has(`${c},${r}`) ? 'R' : map.tiles[r][c];
             const colour = tileColour(t);
             const x = cell.x + c * TILE_PX + TILE_PX / 2;
             const y = cell.y + r * TILE_PX + TILE_PX / 2;
@@ -180,12 +188,14 @@ export function drawConnectors (scene: Scene, maps: Record<string, MapData>, cel
         const cols = map.tiles[0].length;
         const rows = map.tiles.length;
         const cell = cellOf(id);
+        const extraRoads = extraRoadTiles(id);
+        const isRoad = (c: number, r: number) => extraRoads.has(`${c},${r}`) || map.tiles[r][c] === 'R';
 
         if (map.exits?.east)
         {
             for (let r = 0; r < rows; r++)
             {
-                if (map.tiles[r][cols - 1] === 'R')
+                if (isRoad(cols - 1, r))
                 {
                     const y = cell.y + r * TILE_PX + TILE_PX / 2;
                     scene.add.rectangle(cell.x + cols * TILE_PX + GAP / 2, y, GAP + 4, TILE_PX, 0x6d6d6d);
@@ -197,7 +207,7 @@ export function drawConnectors (scene: Scene, maps: Record<string, MapData>, cel
         {
             for (let c = 0; c < cols; c++)
             {
-                if (map.tiles[rows - 1][c] === 'R')
+                if (isRoad(c, rows - 1))
                 {
                     const x = cell.x + c * TILE_PX + TILE_PX / 2;
                     scene.add.rectangle(x, cell.y + rows * TILE_PX + GAP / 2, TILE_PX, GAP + 4, 0x6d6d6d);
@@ -209,7 +219,7 @@ export function drawConnectors (scene: Scene, maps: Record<string, MapData>, cel
         {
             for (let r = 0; r < rows; r++)
             {
-                if (map.tiles[r][0] === 'R')
+                if (isRoad(0, r))
                 {
                     const y = cell.y + r * TILE_PX + TILE_PX / 2;
                     scene.add.rectangle(cell.x - GAP / 2, y, GAP + 4, TILE_PX, 0x6d6d6d);
@@ -221,7 +231,7 @@ export function drawConnectors (scene: Scene, maps: Record<string, MapData>, cel
         {
             for (let c = 0; c < cols; c++)
             {
-                if (map.tiles[0][c] === 'R')
+                if (isRoad(c, 0))
                 {
                     const x = cell.x + c * TILE_PX + TILE_PX / 2;
                     scene.add.rectangle(x, cell.y - GAP / 2, TILE_PX, GAP + 4, 0x6d6d6d);
