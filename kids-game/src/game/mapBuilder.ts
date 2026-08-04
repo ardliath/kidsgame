@@ -612,7 +612,16 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  ---- Data pass: decide what stands where before drawing anything ----
 
     interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy' | 'chinese'; player?: boolean }
-    interface SiteSpec { id: string; col: number; row: number; w: number; h: number }
+
+    //  What a demolished house/landmark used to be — carried on its site so
+    //  building there again restores the same shop or landmark rather than
+    //  a generic house. A plain demolished house restores as itself too,
+    //  which comes out identical to today's plain-house build either way.
+    type RestoreSpec =
+        { type: 'house'; facing?: Edge; sign?: string; sells?: string[]; shopType?: HouseSpec['shopType'] } |
+        { type: 'landmark'; kind: LandmarkSpec['kind'] };
+
+    interface SiteSpec { id: string; col: number; row: number; w: number; h: number; restore?: RestoreSpec }
     interface LandmarkSpec { id: string; col: number; row: number; w: number; h: number; kind: 'clock-tower' | 'windmill' | 'pier' | 'lighthouse' }
 
     const builtHouses = loadBuiltHouses();
@@ -749,8 +758,11 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }
     }
 
-    //  Demolished houses stand as building sites now (a rebuilt one is drawn
-    //  as a house again by the site loop below, because it's in builtHouses)
+    //  Demolished houses (and landmarks — see below) stand as building sites
+    //  now, remembering what they were so building there again restores the
+    //  same shop/landmark rather than a generic house (a rebuilt plain site
+    //  is still drawn as a plain house, by the site loop below, because
+    //  there's nothing to restore beyond that)
     for (let i = houseSpecs.length - 1; i >= 0; i--)
     {
         const spec = houseSpecs[i];
@@ -758,7 +770,27 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         if (demolished.has(spec.id))
         {
             houseSpecs.splice(i, 1);
-            siteSpecs.push({ id: spec.id, col: spec.col, row: spec.row, w: spec.w, h: spec.h });
+            siteSpecs.push({
+                id: spec.id, col: spec.col, row: spec.row, w: spec.w, h: spec.h,
+                restore: { type: 'house', facing: spec.facing, sign: spec.sign, sells: spec.sells, shopType: spec.shopType }
+            });
+        }
+    }
+
+    //  Same conversion for landmarks — the DEMOLISH tool can knock one down
+    //  same as any house/shop, and it becomes an ordinary buildable plot
+    //  rather than vanishing for good
+    for (let i = landmarkSpecs.length - 1; i >= 0; i--)
+    {
+        const spec = landmarkSpecs[i];
+
+        if (demolished.has(spec.id))
+        {
+            landmarkSpecs.splice(i, 1);
+            siteSpecs.push({
+                id: spec.id, col: spec.col, row: spec.row, w: spec.w, h: spec.h,
+                restore: { type: 'landmark', kind: spec.kind }
+            });
         }
     }
 
@@ -875,7 +907,10 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
             const victim = houseSpecs.splice(index, 1)[0];
 
-            siteSpecs.push({ id: victim.id, col: victim.col, row: victim.row, w: victim.w, h: victim.h });
+            siteSpecs.push({
+                id: victim.id, col: victim.col, row: victim.row, w: victim.w, h: victim.h,
+                restore: { type: 'house', facing: victim.facing, sign: victim.sign, sells: victim.sells, shopType: victim.shopType }
+            });
             demolished.add(victim.id);
             saveDemolished([ ...demolished ]);
         }
@@ -1131,7 +1166,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
     //  One distinctive, solid, non-interactive structure per town. Each
     //  kind's main body becomes the physics obstacle (same one-shape-solid
     //  pattern as trees); everything else layered on top is purely visual.
-    const placeLandmark = (col: number, row: number, w: number, h: number, kind: LandmarkSpec['kind']) => {
+    const placeLandmark = (id: string, col: number, row: number, w: number, h: number, kind: LandmarkSpec['kind']) => {
 
         const cx = (col + w / 2) * TILE;
         const cy = (row + h / 2) * TILE;
@@ -1140,6 +1175,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         {
             const body = scene.add.rectangle(cx, cy + 20, 70, 130, 0x90a4ae);
             body.setStrokeStyle(4, 0x546e7a);
+            body.setName(id);
             solid(body);
 
             //  Roof: local points non-negative, so the shape's origin is its
@@ -1156,6 +1192,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         {
             const body = scene.add.rectangle(cx, cy + 40, 56, 120, 0xefebe9);
             body.setStrokeStyle(4, 0xbcaaa4);
+            body.setName(id);
             solid(body);
 
             const hub = scene.add.circle(0, 0, 11, 0x5d4037);
@@ -1181,6 +1218,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
             const deck = scene.add.rectangle(cx, cy, pw, ph, 0x8d6e63);
             deck.setStrokeStyle(4, 0x5d4037);
+            deck.setName(id);
             solid(deck);
 
             for (let i = 1; i < h; i++)
@@ -1204,6 +1242,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
                 if (i === stripeColours.length - 1)
                 {
+                    stripe.setName(id);
                     solid(stripe);
                 }
 
@@ -1226,14 +1265,40 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, spec.colour, spec.facing, spec.sign, spec.sells, spec.shopType, spec.player);
     }
 
+    //  Declared here (rather than alongside the landmarkSpecs loop below)
+    //  so a rebuilt former-landmark site can push into it too
+    const landmarks: PlacedLandmark[] = [];
+
     for (const spec of siteSpecs)
     {
         const built = builtHouses[spec.id];
 
-        if (built)
+        if (built && spec.restore?.type === 'landmark')
+        {
+            //  The player built here and this plot used to be a landmark —
+            //  restore it as that landmark rather than a generic house, so
+            //  knocking one down is never a one-way trip
+            const kind = spec.restore.kind;
+
+            placeLandmark(spec.id, spec.col, spec.row, spec.w, spec.h, kind);
+
+            landmarks.push({
+                id: spec.id,
+                x: (spec.col + spec.w / 2) * TILE,
+                y: (spec.row + spec.h / 2) * TILE,
+                width: spec.w * TILE,
+                height: spec.h * TILE,
+                kind
+            });
+        }
+        else if (built)
         {
             //  The player built here: a real house stands on the plot now
-            placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, built.colour, 'south');
+            //  — restoring the original sign/sells/shopType if this plot
+            //  used to be a shop, so a demolished shop comes back as itself
+            const restore = spec.restore?.type === 'house' ? spec.restore : undefined;
+
+            placeHouse(spec.id, spec.col, spec.row, spec.w, spec.h, built.colour, restore?.facing ?? 'south', restore?.sign, restore?.sells, restore?.shopType);
         }
         else
         {
@@ -1262,11 +1327,9 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
         }).setOrigin(0.5).setDepth(5);
     }
 
-    const landmarks: PlacedLandmark[] = [];
-
     for (const spec of landmarkSpecs)
     {
-        placeLandmark(spec.col, spec.row, spec.w, spec.h, spec.kind);
+        placeLandmark(spec.id, spec.col, spec.row, spec.w, spec.h, spec.kind);
 
         landmarks.push({
             id: spec.id,

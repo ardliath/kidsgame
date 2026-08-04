@@ -648,10 +648,15 @@ export class Driving extends Scene
         if (this.buildTool === 'demolish')
         {
             const house = this.findHouseAt(world.x, world.y);
+            const landmark = house ? undefined : this.findLandmarkAt(world.x, world.y);
 
             if (house)
             {
                 this.demolishHouse(house);
+            }
+            else if (landmark)
+            {
+                this.demolishLandmark(landmark);
             }
             else if (this.extraRoads.has(`${col},${row}`))
             {
@@ -714,6 +719,36 @@ export class Driving extends Scene
         if (rect)
         {
             this.tweens.add({ targets: rect, alpha: 0, scaleX: 0, scaleY: 0, duration: 220 });
+        }
+    }
+
+    //  Which landmark (if any) sits under this world point — same bounding
+    //  box test as findHouseAt, just over the separate landmarks list
+    findLandmarkAt (x: number, y: number): PlacedLandmark | undefined
+    {
+        return this.landmarks.find(l =>
+            x >= l.x - l.width / 2 && x <= l.x + l.width / 2
+            && y >= l.y - l.height / 2 && y <= l.y + l.height / 2);
+    }
+
+    demolishLandmark (landmark: PlacedLandmark)
+    {
+        const demolished = new Set(loadDemolished());
+        demolished.add(landmark.id);
+        saveDemolished([ ...demolished ]);
+
+        this.landmarks = this.landmarks.filter(l => l.id !== landmark.id);
+
+        playSplash();
+        this.showToast('Knocked down!');
+
+        //  Instant feedback: fade the landmark's named solid shape out now
+        //  (proper building-site dirt/stakes come on the rebuild)
+        const shape = this.children.list.find(o => o.name === landmark.id) as Phaser.GameObjects.Rectangle | undefined;
+
+        if (shape)
+        {
+            this.tweens.add({ targets: shape, alpha: 0, scaleX: 0, scaleY: 0, duration: 220 });
         }
     }
 
