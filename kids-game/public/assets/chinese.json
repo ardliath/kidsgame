@@ -1,0 +1,19 @@
+{
+    "maxRice": 3,
+    "ricePrice": 1,
+    "riceColour": "#fdf6e3",
+    "mains": [
+        { "id": "sweetsour", "name": "Sweet & Sour", "colour": "#e64a19", "price": 3 },
+        { "id": "beef", "name": "Beef & Peppers", "colour": "#6d4c41", "price": 3 },
+        { "id": "tofu", "name": "Crispy Tofu", "colour": "#fff3e0", "price": 2 },
+        { "id": "plain", "name": "Just Rice", "colour": "#fdf6e3", "price": 0 }
+    ],
+    "sauces": [
+        { "id": "soy", "name": "Soy Sauce", "colour": "#3e2723", "price": 0 },
+        { "id": "curry", "name": "Curry Sauce", "colour": "#c68e17", "price": 1 },
+        { "id": "sweetchilli", "name": "Sweet Chilli", "colour": "#d84315", "price": 1 }
+    ],
+    "extras": [
+        { "id": "crackers", "name": "Prawn Crackers", "colour": "#ffe0b2", "price": 1 }
+    ]
+}

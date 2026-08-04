@@ -2,6 +2,7 @@ import { Boot } from './scenes/Boot';
 import { Builder } from './scenes/Builder';
 import { Cafe } from './scenes/Cafe';
 import { CarWash } from './scenes/CarWash';
+import { Chinese } from './scenes/Chinese';
 import { Chippy } from './scenes/Chippy';
 import { Cooking } from './scenes/Cooking';
 import { Dashboard } from './scenes/Dashboard';
@@ -48,7 +49,8 @@ const config: Phaser.Types.Core.GameConfig = {
         Yard,
         DeliveryBoard,
         CarWash,
-        Chippy
+        Chippy,
+        Chinese
     ]
 };
 

@@ -54,9 +54,9 @@ export class MiniMap extends Scene
         //  Panel behind the whole thing
         const panel = this.add.graphics();
         panel.fillStyle(0x263238, 1);
-        panel.fillRoundedRect(originX - 40, 120, totalW + 80, totalH + 230, 24);
+        panel.fillRoundedRect(originX - 40, 120, totalW + 80, totalH + 264, 24);
         panel.lineStyle(6, 0x102027, 1);
-        panel.strokeRoundedRect(originX - 40, 120, totalW + 80, totalH + 230, 24);
+        panel.strokeRoundedRect(originX - 40, 120, totalW + 80, totalH + 264, 24);
 
         this.add.text(CX, 168, 'Map', {
             fontFamily: 'Arial Black', fontSize: 40, color: '#ffffff'
@@ -103,7 +103,7 @@ export class MiniMap extends Scene
         this.drawFleet(maps, cellOf);
         this.drawPlayer(maps, cellOf, currentMap);
 
-        //  Legend, over three rows
+        //  Legend, over four rows
         const legendY = originY + totalH + 46;
         this.legendItem(CX - 250, legendY, '🚗', 'You');
         this.legendItem(CX - 90, legendY, '🚙', 'Your cars');
@@ -114,6 +114,7 @@ export class MiniMap extends Scene
         this.legendItem(CX - 250, legendY + 68, '🗼', 'Landmark');
         this.legendItem(CX - 90, legendY + 68, '⛽', 'Petrol');
         this.legendItem(CX + 130, legendY + 68, '🐟', 'Chippy');
+        this.legendItem(CX - 250, legendY + 102, '🥡', 'Takeaway');
 
         this.input.keyboard?.on('keydown-ESC', () => this.close());
     }

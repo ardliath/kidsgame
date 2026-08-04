@@ -25,6 +25,7 @@ const EXTRA_STUBS_KEY = 'kids-game-extra-stubs';
 const UNLOCKED_TOWNS_KEY = 'kids-game-unlocked-towns';
 const EXTRA_EXITS_KEY = 'kids-game-extra-exits';
 const GENERATED_MAPS_KEY = 'kids-game-generated-maps';
+const PENDING_SPECIAL_KEY = 'kids-game-pending-special-building';
 
 export interface SaveData
 {
@@ -866,5 +867,34 @@ export function saveInterior (houseId: string, spec: InteriorSpec)
     catch
     {
         //  The house will still work this session, it just won't be remembered
+    }
+}
+
+//  A special shop (currently: the Chinese takeaway) waiting to be seeded
+//  into the next procedurally generated town, rather than crammed into the
+//  already-full original towns — true (the default, including for saves
+//  from before this existed) until generateAdjacentMap consumes it once
+export function loadPendingSpecialBuilding (): boolean
+{
+    try
+    {
+        const raw = localStorage.getItem(PENDING_SPECIAL_KEY);
+        return raw === null ? true : raw === '1';
+    }
+    catch
+    {
+        return true;
+    }
+}
+
+export function savePendingSpecialBuilding (pending: boolean)
+{
+    try
+    {
+        localStorage.setItem(PENDING_SPECIAL_KEY, pending ? '1' : '0');
+    }
+    catch
+    {
+        //  Ignore: worst case it gets seeded again into a later town too
     }
 }

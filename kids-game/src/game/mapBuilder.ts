@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { buildCarShapes } from './carShapes';
-import { loadBuiltHouses, loadDemolished, loadExtraExits, loadExtraRoads, loadExtraSites, loadGeneratedMaps, loadPlayerName, loadUnlockedTowns, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites } from './storage';
+import { loadBuiltHouses, loadDemolished, loadExtraExits, loadExtraRoads, loadExtraSites, loadGeneratedMaps, loadPendingSpecialBuilding, loadPlayerName, loadUnlockedTowns, loadVisitedHouses, saveBuiltHouses, saveDemolished, saveExtraRoads, saveExtraSite, saveExtraSites, savePendingSpecialBuilding } from './storage';
 
 export const TILE = 200;
 
@@ -110,7 +110,7 @@ export interface MapObject
     //  A signed building with a sells list is a shop. 'grocery' sells
     //  cooking ingredients; 'treat' is an eat-it-now shop like ice cream.
     sells?: string[];
-    shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy';
+    shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy' | 'chinese';
 
     //  The player's own home: painted his car colour, name over the door,
     //  and never demolished.
@@ -167,7 +167,7 @@ export interface PlacedHouse
     colour: number;
     sign?: string;
     sells?: string[];
-    shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy';
+    shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy' | 'chinese';
 
     //  His own home — never a target for the demolish tool
     player?: boolean;
@@ -472,7 +472,11 @@ export function generateAdjacentMap (parentMap: MapData, edge: Edge, crossAt: nu
 
     //  Carve the entry stub last, so it's never overwritten by a stray tree
     //  or a copied coast tile — three tiles inward from the boundary at the
-    //  fixed cross-coordinate carried over from the crossing.
+    //  fixed cross-coordinate carried over from the crossing. One tile
+    //  longer when a special building (below) is about to be seeded beside
+    //  it, so it has room to sit right off the stub rather than the edge.
+    const pendingSpecial = loadPendingSpecialBuilding();
+
     const [ idx, idy ] = EDGE_DELTA[OPPOSITE_EDGE[entryEdge]];
     let ec = entryEdge === 'west' ? 0 : entryEdge === 'east' ? GRID_SIZE - 1 : crossAt;
     let er = entryEdge === 'north' ? 0 : entryEdge === 'south' ? GRID_SIZE - 1 : crossAt;
@@ -480,7 +484,9 @@ export function generateAdjacentMap (parentMap: MapData, edge: Edge, crossAt: nu
     let startCol = ec;
     let startRow = er;
 
-    for (let i = 0; i < 3; i++)
+    const stubLength = pendingSpecial ? 4 : 3;
+
+    for (let i = 0; i < stubLength; i++)
     {
         tiles[er][ec] = 'R';
         startCol = ec;
@@ -489,12 +495,64 @@ export function generateAdjacentMap (parentMap: MapData, edge: Edge, crossAt: nu
         er += idy;
     }
 
+    //  The first town generated after this feature shipped gets a Chinese
+    //  takeaway seeded right beside its entry stub, so new special
+    //  buildings spread into freshly-opened areas instead of piling up in
+    //  the small original towns — a one-shot flag, consumed here, not
+    //  something every generated town gets.
+    const objects: MapObject[] = [];
+
+    if (pendingSpecial)
+    {
+        //  The stub runs along rows (fixed column) when entering from the
+        //  north/south; along columns (fixed row) when entering east/west
+        const stubIsVertical = idy !== 0;
+
+        let shopCol: number;
+        let shopRow: number;
+        let facing: Edge;
+
+        if (stubIsVertical)
+        {
+            //  Sit the shop directly beside the stub's own column, biased
+            //  toward the map's centre so a 2-wide building always fits
+            const sign = startCol <= GRID_SIZE / 2 ? 1 : -1;
+            shopCol = sign > 0 ? startCol + 1 : startCol - 2;
+            shopRow = startRow;
+            facing = sign > 0 ? 'west' : 'east';
+        }
+        else
+        {
+            const sign = startRow <= GRID_SIZE / 2 ? 1 : -1;
+            shopCol = Math.min(startCol, GRID_SIZE - 2);
+            shopRow = sign > 0 ? startRow + 1 : startRow - 1;
+            facing = sign > 0 ? 'north' : 'south';
+        }
+
+        objects.push({
+            id: `${id}-chinese-takeaway`,
+            type: 'house',
+            col: shopCol,
+            row: shopRow,
+            w: 2,
+            h: 1,
+            colour: 'red',
+            facing,
+            sign: 'CHINESE',
+            sells: [],
+            shopType: 'chinese'
+        });
+
+        savePendingSpecialBuilding(false);
+    }
+
     const data: MapData = {
         id,
         name: generateName(coastal),
         tiles: tiles.map(row => row.join('')),
         exits: { [entryEdge]: parentMap.id },
-        start: { col: startCol, row: startRow }
+        start: { col: startCol, row: startRow },
+        objects: objects.length > 0 ? objects : undefined
     };
 
     return { id, data };
@@ -553,7 +611,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     //  ---- Data pass: decide what stands where before drawing anything ----
 
-    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy'; player?: boolean }
+    interface HouseSpec { id: string; col: number; row: number; w: number; h: number; colour?: string; facing?: Edge; sign?: string; sells?: string[]; shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy' | 'chinese'; player?: boolean }
     interface SiteSpec { id: string; col: number; row: number; w: number; h: number }
     interface LandmarkSpec { id: string; col: number; row: number; w: number; h: number; kind: 'clock-tower' | 'windmill' | 'pier' | 'lighthouse' }
 
@@ -827,7 +885,7 @@ export function buildMap (scene: Scene, map: MapData): BuiltMap
 
     //  Shared by plain H tiles, legend characters and map objects.
     //  Every house gets a unique, stable id.
-    const placeHouse = (id: string, col: number, row: number, w: number, h: number, colourName?: string, facing?: Edge, sign?: string, sells?: string[], shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy', player?: boolean) => {
+    const placeHouse = (id: string, col: number, row: number, w: number, h: number, colourName?: string, facing?: Edge, sign?: string, sells?: string[], shopType?: 'grocery' | 'treat' | 'cafe' | 'petrol' | 'chippy' | 'chinese', player?: boolean) => {
 
         if (usedIds.has(id))
         {
